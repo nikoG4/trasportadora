@@ -618,6 +618,7 @@ export function initDb() {
 
   // Create admin user
   db.prepare("INSERT OR IGNORE INTO tenants (id, nombre, ruc, dominio, plan, estado, configuracion_json) VALUES (1, 'Empresa Demo Transportadora', '80012345-6', 'demo.local', 'demo', 'activo', '{}')").run();
+  try { db.prepare("SELECT setval(pg_get_serial_sequence('tenants', 'id'), COALESCE((SELECT MAX(id) FROM tenants), 1), true)").get(); } catch (e) {}
 
   const permisos = [
     'users.manage', 'pedidos.read', 'pedidos.create', 'pedidos.update', 'pedidos.delete',
