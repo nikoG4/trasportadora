@@ -318,11 +318,14 @@ function insertAllowedRecord(table: string, payload: Record<string, any>, allowe
   return db.prepare(`INSERT INTO ${table} (${fields.join(', ')}) VALUES (${placeholders})`).run(...values);
 }
 
-function updateAllowedRecord(table: string, id: string, payload: Record<string, any>, allowedFields: string[]) {
+function updateAllowedRecord(table: string, id: string, payload: Record<string, any>, allowedFields: string[], tenantId?: number) {
   const fields = pickAllowedFields(payload, allowedFields);
   if (fields.length === 0) throw new Error('No hay datos validos para actualizar');
   const setClause = fields.map(field => `${field} = ?`).join(', ');
   const values = fields.map(field => payload[field]);
+  if (tenantId) {
+    return db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ? AND tenant_id = ?`).run(...values, id, tenantId);
+  }
   return db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ?`).run(...values, id);
 }
 
@@ -359,7 +362,7 @@ app.post('/api/chofer/login', loginLimiter, resolveTenant, (req, res) => {
   const user = db.prepare(`
     SELECT u.*, c.id as chofer_id_resuelto, c.nombre as chofer_nombre, c.estado as chofer_estado
     FROM users u
-    LEFT JOIN choferes c ON c.id = u.chofer_id
+    LEFT JOIN choferes c ON c.id = u.chofer_id AND c.tenant_id = u.tenant_id
     WHERE u.username = ? AND COALESCE(u.estado, 'activo') = 'activo'
   `).get(username) as any;
   const validPassword = user?.password_hash
@@ -398,9 +401,9 @@ app.get('/api/chofer/me', authenticate, (req, res) => {
   const row = db.prepare(`
     SELECT c.id, c.nombre, c.documento, c.licencia, c.telefono, c.estado
     FROM users u
-    JOIN choferes c ON c.id = u.chofer_id
-    WHERE u.id = ? AND COALESCE(c.estado, 'activo') = 'activo'
-  `).get(req.user.id) as any;
+    JOIN choferes c ON c.id = u.chofer_id AND c.tenant_id = u.tenant_id
+    WHERE u.id = ? AND u.tenant_id = ? AND COALESCE(c.estado, 'activo') = 'activo'
+  `).get(req.user.id, req.user.tenant_id) as any;
   if (!row) return res.status(404).json({ error: 'Perfil de chofer no encontrado' });
   res.json({ chofer: row });
 });
@@ -664,7 +667,7 @@ app.post('/api/usuarios', authenticate, requirePermission('users.manage'), (req,
   }
 });
 app.delete('/api/usuarios/:id', authenticate, requirePermission('users.manage'), (req, res) => {
-  const before = db.prepare("SELECT id, username, role, tenant_id FROM users WHERE id = ?").get(req.params.id);
+  const before = db.prepare("SELECT id, username, role, tenant_id FROM users WHERE id = ? AND (tenant_id = ? OR ? = 'superadmin_saas')").get(req.params.id, req.user?.tenant_id || 1, req.user?.role || '');
   db.prepare("UPDATE users SET estado = 'inactivo' WHERE id = ? AND (tenant_id = ? OR ? = 'superadmin_saas')").run(req.params.id, req.user?.tenant_id || 1, req.user?.role || '');
   audit(req, 'usuario.inactivado', 'users', req.params.id, before, { estado: 'inactivo' });
   res.json({ success: true });
@@ -789,22 +792,22 @@ app.put('/api/pedidos/:id', (req, res) => {
   if (fields.length === 0) return res.status(400).json({ error: 'No data' });
   const setClause = fields.map(f => `${f} = ?`).join(', ');
   try {
-    db.prepare(`UPDATE pedidos SET ${setClause} WHERE id = ?`).run(...values, req.params.id);
+    db.prepare(`UPDATE pedidos SET ${setClause} WHERE id = ? AND tenant_id = ?`).run(...values, req.params.id, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(500).json({ error: 'Error actualizando pedido', details: e.message });
   }
 });
 app.delete('/api/pedidos/:id', (req, res) => {
-  db.prepare("UPDATE pedidos SET estado = 'cancelado' WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE pedidos SET estado = 'cancelado' WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 app.put('/api/pedidos/:id/estado', (req, res) => {
   const { estado, foto_pod } = req.body;
   if (foto_pod) {
-    db.prepare("UPDATE pedidos SET estado = ?, foto_pod = ? WHERE id = ?").run(estado, foto_pod, req.params.id);
+    db.prepare("UPDATE pedidos SET estado = ?, foto_pod = ? WHERE id = ? AND tenant_id = ?").run(estado, foto_pod, req.params.id, tenantIdFromRequest(req));
   } else {
-    db.prepare("UPDATE pedidos SET estado = ? WHERE id = ?").run(estado, req.params.id);
+    db.prepare("UPDATE pedidos SET estado = ? WHERE id = ? AND tenant_id = ?").run(estado, req.params.id, tenantIdFromRequest(req));
   }
   res.json({ success: true });
 });
@@ -813,8 +816,8 @@ app.put('/api/pedidos/:id/pod', (req, res) => {
   db.prepare(`
     UPDATE pedidos 
     SET estado = ?, foto_pod = COALESCE(?, foto_pod), firma_pod = ?, observaciones = ?, bultos_reales = ?, motivo_devolucion = ?
-    WHERE id = ?
-  `).run(estado, foto_pod || null, firma_pod, observaciones, bultos_reales, motivo_devolucion || null, req.params.id);
+    WHERE id = ? AND tenant_id = ?
+  `).run(estado, foto_pod || null, firma_pod, observaciones, bultos_reales, motivo_devolucion || null, req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -894,19 +897,20 @@ app.get('/api/viajes/chofer/:id', (req, res) => {
 app.put('/api/viajes/:id/estado', (req, res) => {
   const { estado, incidencias } = req.body;
   const viajeId = req.params.id;
+  const tenantId = tenantIdFromRequest(req);
   
   if (incidencias) {
-    db.prepare("UPDATE viajes SET estado = ?, incidencias = ? WHERE id = ?").run(estado, incidencias, viajeId);
+    db.prepare("UPDATE viajes SET estado = ?, incidencias = ? WHERE id = ? AND tenant_id = ?").run(estado, incidencias, viajeId, tenantId);
   } else {
-    db.prepare("UPDATE viajes SET estado = ? WHERE id = ?").run(estado, viajeId);
+    db.prepare("UPDATE viajes SET estado = ? WHERE id = ? AND tenant_id = ?").run(estado, viajeId, tenantId);
   }
   
   if (estado === 'en_ruta') {
-    db.prepare("UPDATE pedidos SET estado = 'en_transito' WHERE viaje_id = ? AND estado = 'planificado'").run(viajeId);
+    db.prepare("UPDATE pedidos SET estado = 'en_transito' WHERE viaje_id = ? AND tenant_id = ? AND estado = 'planificado'").run(viajeId, tenantId);
   } else if (estado === 'finalizado') {
-    const viaje = db.prepare("SELECT vehiculo_id FROM viajes WHERE id = ?").get(viajeId) as any;
+    const viaje = db.prepare("SELECT vehiculo_id FROM viajes WHERE id = ? AND tenant_id = ?").get(viajeId, tenantId) as any;
     if (viaje) {
-      db.prepare("UPDATE vehiculos SET estado = 'disponible' WHERE id = ?").run(viaje.vehiculo_id);
+      db.prepare("UPDATE vehiculos SET estado = 'disponible' WHERE id = ? AND tenant_id = ?").run(viaje.vehiculo_id, tenantId);
     }
   }
   res.json({ success: true });
@@ -939,39 +943,50 @@ app.get('/api/tracking/latest', (req, res) => {
 });
 
 // --- Combustible ---
-app.get('/api/combustible', (req, res) => res.json(db.prepare(`SELECT c.*, v.chapa FROM combustible c JOIN vehiculos v ON c.vehiculo_id = v.id ORDER BY c.fecha DESC`).all()));
+app.get('/api/combustible', (req, res) => {
+  const tenantId = tenantIdFromRequest(req);
+  res.json(db.prepare(`
+    SELECT c.*, v.chapa
+    FROM combustible c
+    JOIN vehiculos v ON c.vehiculo_id = v.id AND v.tenant_id = c.tenant_id
+    WHERE c.tenant_id = ?
+    ORDER BY c.fecha DESC
+  `).all(tenantId));
+});
 app.post('/api/combustible', (req, res) => {
   const { vehiculo_id, litros, monto, fecha, kilometraje } = req.body;
-  db.prepare("INSERT INTO combustible (vehiculo_id, litros, monto, fecha, kilometraje) VALUES (?, ?, ?, ?, ?)").run(vehiculo_id, litros, monto, fecha, kilometraje);
+  db.prepare("INSERT INTO combustible (tenant_id, vehiculo_id, litros, monto, fecha, kilometraje) VALUES (?, ?, ?, ?, ?, ?)").run(tenantIdFromRequest(req), vehiculo_id, litros, monto, fecha, kilometraje);
   res.json({ success: true });
 });
 
 // --- Alertas y Reportes ---
 app.get('/api/alertas/vencimientos', (req, res) => {
-  const vehiculos = db.prepare("SELECT id, chapa, vencimiento_seguro, vencimiento_habilitacion FROM vehiculos").all();
-  const choferes = db.prepare("SELECT id, nombre, vencimiento_licencia FROM choferes").all();
+  const tenantId = tenantIdFromRequest(req);
+  const vehiculos = db.prepare("SELECT id, chapa, vencimiento_seguro, vencimiento_habilitacion FROM vehiculos WHERE tenant_id = ?").all(tenantId);
+  const choferes = db.prepare("SELECT id, nombre, vencimiento_licencia FROM choferes WHERE tenant_id = ?").all(tenantId);
   res.json({ vehiculos, choferes });
 });
 
 // --- Configuracion ---
-app.get('/api/configuracion', (req, res) => res.json(db.prepare("SELECT * FROM configuracion").all()));
+app.get('/api/configuracion', (req, res) => res.json(db.prepare("SELECT * FROM configuracion WHERE tenant_id = ?").all(tenantIdFromRequest(req))));
 app.put('/api/configuracion', (req, res) => {
   const { clave, valor } = req.body;
   db.prepare(`
-    INSERT INTO configuracion (clave, valor) VALUES (?, ?)
-    ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
-  `).run(clave, valor);
+    INSERT INTO configuracion (tenant_id, clave, valor) VALUES (?, ?, ?)
+    ON CONFLICT(tenant_id, clave) DO UPDATE SET valor = excluded.valor
+  `).run(tenantIdFromRequest(req), clave, valor);
   res.json({ success: true });
 });
 app.put('/api/configuracion/bulk', (req, res) => {
   const entries = Object.entries(req.body || {});
   const stmt = db.prepare(`
-    INSERT INTO configuracion (clave, valor) VALUES (?, ?)
-    ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
+    INSERT INTO configuracion (tenant_id, clave, valor) VALUES (?, ?, ?)
+    ON CONFLICT(tenant_id, clave) DO UPDATE SET valor = excluded.valor
   `);
+  const tenantId = tenantIdFromRequest(req);
   const tx = db.transaction(() => {
     for (const [clave, valor] of entries) {
-      stmt.run(clave, typeof valor === 'string' ? valor : JSON.stringify(valor));
+      stmt.run(tenantId, clave, typeof valor === 'string' ? valor : JSON.stringify(valor));
     }
   });
   tx();
@@ -1210,7 +1225,7 @@ app.post('/api/caja/rendiciones', (req, res) => {
 app.put('/api/caja/rendiciones/:id', (req, res) => {
   const { estado } = req.body;
   try {
-    db.prepare("UPDATE rendiciones_chofer SET estado = ? WHERE id = ?").run(estado, req.params.id);
+    db.prepare("UPDATE rendiciones_chofer SET estado = ? WHERE id = ? AND tenant_id = ?").run(estado, req.params.id, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -1237,10 +1252,11 @@ app.get('/api/clientes/:id/cuenta', (req, res) => {
 });
 app.post('/api/pagos', (req, res) => {
   const { cliente_id, pedido_id, monto, fecha, metodo_pago, referencia_comprobante, usuario_id } = req.body;
+  const tenantId = tenantIdFromRequest(req);
   const transaction = db.transaction(() => {
-    const info = db.prepare("INSERT INTO pagos_clientes (cliente_id, pedido_id, monto, fecha, metodo_pago, referencia_comprobante, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?)").run(cliente_id, pedido_id, monto, fecha, metodo_pago, referencia_comprobante, usuario_id);
+    const info = db.prepare("INSERT INTO pagos_clientes (tenant_id, cliente_id, pedido_id, monto, fecha, metodo_pago, referencia_comprobante, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(tenantId, cliente_id, pedido_id, monto, fecha, metodo_pago, referencia_comprobante, usuario_id);
     
-    db.prepare("UPDATE cuentas_corrientes_clientes SET saldo_deudor = saldo_deudor - ? WHERE cliente_id = ?").run(monto, cliente_id);
+    db.prepare("UPDATE cuentas_corrientes_clientes SET saldo_deudor = saldo_deudor - ? WHERE cliente_id = ? AND tenant_id = ?").run(monto, cliente_id, tenantId);
     
     return info.lastInsertRowid;
   });
@@ -1257,7 +1273,10 @@ app.post('/api/pagos', (req, res) => {
 app.post('/api/evidencias', (req, res) => {
   const { pedido_id, tipo, foto_url, fecha } = req.body;
   try {
-    const info = db.prepare("INSERT INTO evidencias_pedido (pedido_id, tipo, foto_url, fecha) VALUES (?, ?, ?, ?)").run(pedido_id, tipo, foto_url, fecha);
+    const tenantId = tenantIdFromRequest(req);
+    const pedido = db.prepare("SELECT id FROM pedidos WHERE id = ? AND tenant_id = ?").get(pedido_id, tenantId);
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    const info = db.prepare("INSERT INTO evidencias_pedido (tenant_id, pedido_id, tipo, foto_url, fecha) VALUES (?, ?, ?, ?, ?)").run(tenantId, pedido_id, tipo, foto_url, fecha);
     res.json({ id: info.lastInsertRowid });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -1325,14 +1344,14 @@ app.post('/api/rrhh/empleados', (req, res) => {
 });
 app.put('/api/rrhh/empleados/:id', (req, res) => {
   try {
-    updateAllowedRecord(rrhhTables.empleados, req.params.id, req.body, rrhhFields.empleados);
+    updateAllowedRecord(rrhhTables.empleados, req.params.id, req.body, rrhhFields.empleados, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/rrhh/empleados/:id', (req, res) => {
-  db.prepare("UPDATE rrhh_empleados SET estado = 'inactivo' WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE rrhh_empleados SET estado = 'inactivo' WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1356,14 +1375,14 @@ app.post('/api/rrhh/asistencias', (req, res) => {
 });
 app.put('/api/rrhh/asistencias/:id', (req, res) => {
   try {
-    updateAllowedRecord(rrhhTables.asistencias, req.params.id, req.body, rrhhFields.asistencias);
+    updateAllowedRecord(rrhhTables.asistencias, req.params.id, req.body, rrhhFields.asistencias, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/rrhh/asistencias/:id', (req, res) => {
-  db.prepare("DELETE FROM rrhh_asistencias WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM rrhh_asistencias WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1389,14 +1408,14 @@ app.post('/api/rrhh/licencias', (req, res) => {
 });
 app.put('/api/rrhh/licencias/:id', (req, res) => {
   try {
-    updateAllowedRecord(rrhhTables.licencias, req.params.id, req.body, rrhhFields.licencias);
+    updateAllowedRecord(rrhhTables.licencias, req.params.id, req.body, rrhhFields.licencias, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/rrhh/licencias/:id', (req, res) => {
-  db.prepare("DELETE FROM rrhh_licencias WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM rrhh_licencias WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1429,14 +1448,14 @@ app.post('/api/rrhh/nomina', (req, res) => {
 });
 app.put('/api/rrhh/nomina/:id', (req, res) => {
   try {
-    updateAllowedRecord(rrhhTables.nomina, req.params.id, req.body, rrhhFields.nomina);
+    updateAllowedRecord(rrhhTables.nomina, req.params.id, req.body, rrhhFields.nomina, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/rrhh/nomina/:id', (req, res) => {
-  db.prepare("DELETE FROM rrhh_nomina WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM rrhh_nomina WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1460,14 +1479,14 @@ app.post('/api/rrhh/capacitaciones', (req, res) => {
 });
 app.put('/api/rrhh/capacitaciones/:id', (req, res) => {
   try {
-    updateAllowedRecord(rrhhTables.capacitaciones, req.params.id, req.body, rrhhFields.capacitaciones);
+    updateAllowedRecord(rrhhTables.capacitaciones, req.params.id, req.body, rrhhFields.capacitaciones, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/rrhh/capacitaciones/:id', (req, res) => {
-  db.prepare("DELETE FROM rrhh_capacitaciones WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM rrhh_capacitaciones WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1529,14 +1548,14 @@ app.post('/api/gestion/proveedores', (req, res) => {
 });
 app.put('/api/gestion/proveedores/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.proveedores, req.params.id, req.body, gestionFields.proveedores);
+    updateAllowedRecord(gestionTables.proveedores, req.params.id, req.body, gestionFields.proveedores, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/proveedores/:id', (req, res) => {
-  db.prepare("UPDATE proveedores SET estado = 'inactivo' WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE proveedores SET estado = 'inactivo' WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1560,14 +1579,14 @@ app.post('/api/gestion/compras', (req, res) => {
 });
 app.put('/api/gestion/compras/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.compras, req.params.id, req.body, gestionFields.compras);
+    updateAllowedRecord(gestionTables.compras, req.params.id, req.body, gestionFields.compras, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/compras/:id', (req, res) => {
-  db.prepare("DELETE FROM compras WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM compras WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1592,14 +1611,14 @@ app.post('/api/gestion/mantenimientos', (req, res) => {
 });
 app.put('/api/gestion/mantenimientos/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.mantenimientos, req.params.id, req.body, gestionFields.mantenimientos);
+    updateAllowedRecord(gestionTables.mantenimientos, req.params.id, req.body, gestionFields.mantenimientos, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/mantenimientos/:id', (req, res) => {
-  db.prepare("DELETE FROM mantenimientos_vehiculo WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM mantenimientos_vehiculo WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1627,14 +1646,14 @@ app.post('/api/gestion/incidencias', (req, res) => {
 });
 app.put('/api/gestion/incidencias/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.incidencias, req.params.id, req.body, gestionFields.incidencias);
+    updateAllowedRecord(gestionTables.incidencias, req.params.id, req.body, gestionFields.incidencias, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/incidencias/:id', (req, res) => {
-  db.prepare("DELETE FROM incidencias_operativas WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM incidencias_operativas WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1658,14 +1677,14 @@ app.post('/api/gestion/inventario', (req, res) => {
 });
 app.put('/api/gestion/inventario/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.inventario, req.params.id, req.body, gestionFields.inventario);
+    updateAllowedRecord(gestionTables.inventario, req.params.id, req.body, gestionFields.inventario, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/inventario/:id', (req, res) => {
-  db.prepare("DELETE FROM inventario_deposito WHERE id = ?").run(req.params.id);
+  db.prepare("DELETE FROM inventario_deposito WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1690,14 +1709,14 @@ app.post('/api/gestion/tarifarios', (req, res) => {
 });
 app.put('/api/gestion/tarifarios/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.tarifarios, req.params.id, req.body, gestionFields.tarifarios);
+    updateAllowedRecord(gestionTables.tarifarios, req.params.id, req.body, gestionFields.tarifarios, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/tarifarios/:id', (req, res) => {
-  db.prepare("UPDATE tarifarios SET estado = 'inactivo' WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE tarifarios SET estado = 'inactivo' WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 
@@ -1722,14 +1741,14 @@ app.post('/api/gestion/contratos', (req, res) => {
 });
 app.put('/api/gestion/contratos/:id', (req, res) => {
   try {
-    updateAllowedRecord(gestionTables.contratos, req.params.id, req.body, gestionFields.contratos);
+    updateAllowedRecord(gestionTables.contratos, req.params.id, req.body, gestionFields.contratos, tenantIdFromRequest(req));
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
   }
 });
 app.delete('/api/gestion/contratos/:id', (req, res) => {
-  db.prepare("UPDATE contratos_clientes SET estado = 'inactivo' WHERE id = ?").run(req.params.id);
+  db.prepare("UPDATE contratos_clientes SET estado = 'inactivo' WHERE id = ? AND tenant_id = ?").run(req.params.id, tenantIdFromRequest(req));
   res.json({ success: true });
 });
 

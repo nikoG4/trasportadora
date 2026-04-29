@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { createPgDatabase } from './pg-sync-db';
 
-const db = new Database('transportadora.db');
+const db: any = process.env.DATABASE_URL ? createPgDatabase() : new Database('transportadora.db');
 
 export function initDb() {
   db.exec(`
@@ -146,8 +147,11 @@ export function initDb() {
     );
 
     CREATE TABLE IF NOT EXISTS configuracion (
-      clave TEXT PRIMARY KEY, 
-      valor TEXT
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER DEFAULT 1,
+      clave TEXT NOT NULL,
+      valor TEXT,
+      UNIQUE(tenant_id, clave)
     );
 
     CREATE TABLE IF NOT EXISTS movimientos_caja (
@@ -645,11 +649,11 @@ export function initDb() {
   }
 
   // Config defaults
-  const insertConfig = db.prepare("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES (?, ?)");
-  insertConfig.run('membrete', 'TRANSPORTADORA PARAGUAY SAAS\\nRUC: 80012345-6\\nTel: 0981 000 000');
-  insertConfig.run('ticket_width_chars', '32');
-  insertConfig.run('ticket_copies', '2');
-  insertConfig.run('ticket_fields', JSON.stringify({
+  const insertConfig = db.prepare("INSERT OR IGNORE INTO configuracion (tenant_id, clave, valor) VALUES (?, ?, ?)");
+  insertConfig.run(1, 'membrete', 'TRANSPORTADORA PARAGUAY SAAS\\nRUC: 80012345-6\\nTel: 0981 000 000');
+  insertConfig.run(1, 'ticket_width_chars', '32');
+  insertConfig.run(1, 'ticket_copies', '2');
+  insertConfig.run(1, 'ticket_fields', JSON.stringify({
     numero_guia: true,
     fecha: true,
     remitente_nombre: true,
@@ -682,7 +686,7 @@ export function initDb() {
 
 function seedData() {
   const sucursales = db.prepare("SELECT count(*) as count FROM sucursales").get() as { count: number };
-  if (sucursales.count === 0) {
+  if (Number(sucursales.count) === 0) {
     console.log("Seeding base data...");
 
     const insertSucursal = db.prepare("INSERT INTO sucursales (nombre, codigo, direccion, ciudad, departamento, telefono, responsable) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -762,7 +766,7 @@ function ensureDriverUsers() {
 
 function seedHumanResources() {
   const empleados = db.prepare("SELECT count(*) as count FROM rrhh_empleados").get() as { count: number };
-  if (empleados.count > 0) return;
+  if (Number(empleados.count) > 0) return;
 
   const insertEmpleado = db.prepare(`
     INSERT INTO rrhh_empleados (
@@ -855,7 +859,7 @@ function seedHumanResources() {
 
 function seedManagementData() {
   const proveedores = db.prepare("SELECT count(*) as count FROM proveedores").get() as { count: number };
-  if (proveedores.count > 0) return;
+  if (Number(proveedores.count) > 0) return;
 
   const insertProveedor = db.prepare(`
     INSERT INTO proveedores (nombre, ruc, telefono, email, direccion, categoria, contacto, estado, observaciones)
