@@ -1,24 +1,52 @@
 # Sistema Transportadora
 
-Este es un MVP de un sistema integral de paquetería y logística.
+MVP de un sistema integral de paqueteria y logistica para transportadoras.
 
-## Comandos Rápidos
+## Comandos Rapidos
 
-En la raíz del proyecto (donde se ubica este README), debes instalar las dependencias generales con `npm install` la primera vez.
+En la raiz del proyecto, instala las dependencias generales la primera vez:
 
-- Levantar todos los servicios:
-  `npm run dev:all`
-  Esto iniciará el backend en el puerto `3001` y los 3 frontends en distintos puertos asignados por Vite.
+```bash
+npm install
+```
 
-- Construir frontends para producción:
-  `npm run build:all`
+Levantar todos los servicios:
 
-- Ejecutar las pruebas E2E (Asegúrate de que `dev:all` esté corriendo y las dependencias de `/e2e-tests` estén instaladas):
-  `npm run test:e2e`
+```bash
+npm run dev:all
+```
+
+Esto inicia el backend en el puerto `3001` y los 3 frontends en puertos asignados por Vite.
+
+Construir frontends para produccion:
+
+```bash
+npm run build:all
+```
+
+Ejecutar pruebas E2E:
+
+```bash
+npm run test:e2e
+```
+
+Antes de correr las pruebas, asegurate de que `npm run dev:all` este activo y que las dependencias de `/e2e-tests` esten instaladas.
 
 ## Estructura
+
 - `/backend`: Servidor Node + Express + SQLite.
-- `/frontend`: Panel administrativo SaaS (Vite + React).
-- `/app-chofer`: Aplicación móvil/PWA para transportistas (Vite + React).
-- `/landing-saas`: Landing page del sistema (Vite + React).
+- `/frontend`: Panel administrativo SaaS con Vite + React.
+- `/app-chofer`: Aplicacion movil/PWA para choferes con Vite + React + Capacitor.
+- `/landing-saas`: Landing page del sistema con Vite + React.
 - `/e2e-tests`: Suite de pruebas automatizadas en Playwright.
+- `/docs`: Documentacion tecnica, funcional, despliegue y operacion.
+
+## Documentacion
+
+Toda la documentacion vive en `/docs`.
+
+- [Indice de documentacion](docs/README.md)
+- [Estado actual del sistema](docs/ESTADO_ACTUAL_SISTEMA.md)
+- [Arquitectura](docs/ARQUITECTURA.md)
+- [Despliegue en GCloud](docs/DESPLIEGUE_GCLOUD.md)
+- [Documentacion funcional completa](docs/documentacion_sistema_transportadora_paraguay.md)
