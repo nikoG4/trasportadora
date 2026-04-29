@@ -1,0 +1,17 @@
+{
+  "name": "transportadora",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:chofer": "cd app-chofer && npm run dev",
+    "dev:landing": "cd landing-saas && npm run dev",
+    "dev:all": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:chofer\" \"npm run dev:landing\"",
+    "build:all": "cd backend && npm run build && cd ../frontend && npm run build && cd ../app-chofer && npm run build && cd ../landing-saas && npm run build",
+    "test:e2e": "cd e2e-tests && npx playwright test --project=chromium",
+    "notify:done": "powershell -ExecutionPolicy Bypass -File scripts/notify-finished.ps1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

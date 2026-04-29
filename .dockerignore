@@ -1,0 +1,10 @@
+**/node_modules
+**/.npm
+**/.vite
+**/dist
+**/playwright-report
+**/test-results
+*.log
+*.err.log
+cloudflared.exe
+playwright-audit

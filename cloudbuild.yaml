@@ -1,0 +1,48 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/transportadora/transportadora-saas:$BUILD_ID
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/transportadora/transportadora-saas:$BUILD_ID
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - transportadora
+      - --image
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/transportadora/transportadora-saas:$BUILD_ID
+      - --region
+      - ${_REGION}
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --port
+      - "8080"
+      - --cpu
+      - "1"
+      - --memory
+      - 512Mi
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "2"
+      - --concurrency
+      - "80"
+      - --set-env-vars
+      - NODE_ENV=production
+      - --set-secrets
+      - DATABASE_URL=database-url:latest,JWT_SECRET=jwt-secret:latest,REFRESH_TOKEN_SECRET=refresh-token-secret:latest
+
+substitutions:
+  _REGION: us-central1
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/transportadora/transportadora-saas:$BUILD_ID
