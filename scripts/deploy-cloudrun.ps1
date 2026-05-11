@@ -34,10 +34,20 @@ Push-Location $root
 try {
   $buildArgs = @("builds", "submit", "--config", $Config, "--project", $ProjectId, "--substitutions", "_REGION=$Region")
   if ($env:GITHUB_ACTIONS -eq "true") {
-    $buildArgs += "--suppress-logs"
+    $buildArgs += @("--async", "--format", "value(id)")
+    $buildId = ((& $releaseConfig.Gcloud @buildArgs) | Select-Object -Last 1).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $buildId) { throw "No se pudo iniciar Cloud Build" }
+    Write-Host "Cloud Build iniciado: $buildId"
+    do {
+      Start-Sleep -Seconds 10
+      $status = ((& $releaseConfig.Gcloud builds describe $buildId --project $ProjectId --format "value(status)") | Select-Object -Last 1).Trim()
+      Write-Host "Cloud Build status: $status"
+    } while ($status -in @("QUEUED", "WORKING", "PENDING"))
+    if ($status -ne "SUCCESS") { throw "Cloud Build termino con estado $status" }
+  } else {
+    & $releaseConfig.Gcloud @buildArgs
+    if ($LASTEXITCODE -ne 0) { throw "Cloud Build fallo con codigo $LASTEXITCODE" }
   }
-  & $releaseConfig.Gcloud @buildArgs
-  if ($LASTEXITCODE -ne 0) { throw "Cloud Build fallo con codigo $LASTEXITCODE" }
   & $releaseConfig.Gcloud run services describe transportadora --region $Region --project $ProjectId --format "value(status.url,status.latestReadyRevisionName)"
 } finally {
   Pop-Location
