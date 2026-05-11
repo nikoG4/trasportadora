@@ -32,7 +32,11 @@ Write-Host "Target solicitado: $Target (la imagen Docker contiene backend + fron
 
 Push-Location $root
 try {
-  & $releaseConfig.Gcloud builds submit --config $Config --project $ProjectId --substitutions "_REGION=$Region"
+  $buildArgs = @("builds", "submit", "--config", $Config, "--project", $ProjectId, "--substitutions", "_REGION=$Region")
+  if ($env:GITHUB_ACTIONS -eq "true") {
+    $buildArgs += "--suppress-logs"
+  }
+  & $releaseConfig.Gcloud @buildArgs
   if ($LASTEXITCODE -ne 0) { throw "Cloud Build fallo con codigo $LASTEXITCODE" }
   & $releaseConfig.Gcloud run services describe transportadora --region $Region --project $ProjectId --format "value(status.url,status.latestReadyRevisionName)"
 } finally {
