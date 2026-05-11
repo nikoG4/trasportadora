@@ -43,7 +43,7 @@ RUN apt-get update \
   && npm cache clean --force
 COPY --from=backend-build /app/backend/dist ./dist
 COPY backend/transportadora.db ./transportadora.db
-COPY backend/downloads ./downloads
+RUN mkdir -p ./downloads
 COPY --from=frontend-build /app/frontend/dist ./public
 COPY --from=chofer-build /app/app-chofer/dist ./chofer
 COPY --from=landing-build /app/landing-saas/dist ./landing
