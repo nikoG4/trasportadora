@@ -250,6 +250,10 @@ function seedData(): void {
     insertConfig.run('membrete', 'TRANSPORTADORA PARAGUAY SAAS\\nRUC: 80012345-6\\nTel: 0981 000 000');
     insertConfig.run('ticket_width_chars', '32');
     insertConfig.run('ticket_copies', '2');
+    insertConfig.run('map_default_label', 'Ciudad del Este');
+    insertConfig.run('map_default_lat', '-25.5167');
+    insertConfig.run('map_default_lng', '-54.6167');
+    insertConfig.run('map_default_zoom', '13');
     insertConfig.run('moneda', 'PYG');
     insertConfig.run('idioma', 'es');
 

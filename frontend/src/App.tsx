@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Truck, Map, Users, Package, FileText, Home, Car, BarChart2, Settings, Shield, Building, DollarSign, Wallet, CreditCard, TrendingUp, UserCog, Wrench } from 'lucide-react';
+import { Truck, Map, Users, Package, FileText, Home, Car, BarChart2, Settings, Shield, Building, DollarSign, Wallet, CreditCard, TrendingUp, UserCog, Wrench, Route as RouteIcon, Smartphone } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Vehiculos from './pages/Vehiculos';
 import Choferes from './pages/Choferes';
 import Clientes from './pages/Clientes';
 import Pedidos from './pages/Pedidos';
 import Viajes from './pages/Viajes';
+import RepartoLocal from './pages/RepartoLocal';
 import Mapa from './pages/Mapa';
 import Reportes from './pages/Reportes';
 import Configuracion from './pages/Configuracion';
@@ -19,6 +20,7 @@ import Ingresos from './pages/Ingresos';
 import RRHH from './pages/RRHH';
 import GestionIntegral from './pages/GestionIntegral';
 import Auditoria from './pages/Auditoria';
+import AppUpdates from './pages/AppUpdates';
 import './index.css';
 
 function Sidebar({ role, onLogout }: { role: string, onLogout: () => void }) {
@@ -37,6 +39,7 @@ function Sidebar({ role, onLogout }: { role: string, onLogout: () => void }) {
         <li style={{ padding: '0 1.5rem', fontSize: '0.75rem', color: '#6b7280', fontWeight: 'bold', marginBottom: '0.5rem' }}>OPERACIONES</li>
         <li><NavLink to="/pedidos" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Package size={20}/> Pedidos</NavLink></li>
         <li><NavLink to="/viajes" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Map size={20}/> Viajes</NavLink></li>
+        <li><NavLink to="/reparto-local" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><RouteIcon size={20}/> Reparto local</NavLink></li>
         <li><NavLink to="/mapa" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Map size={20}/> Monitoreo GPS</NavLink></li>
         <li><NavLink to="/gestion-integral" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Wrench size={20}/> Gestion Integral</NavLink></li>
         
@@ -63,6 +66,9 @@ function Sidebar({ role, onLogout }: { role: string, onLogout: () => void }) {
             <li><NavLink to="/reportes" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><BarChart2 size={20}/> Reportes Financieros</NavLink></li>
             <li><NavLink to="/usuarios" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Shield size={20}/> Usuarios y Roles</NavLink></li>
             <li><NavLink to="/auditoria" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Shield size={20}/> Auditoria</NavLink></li>
+            {role === 'superadmin_saas' && (
+              <li><NavLink to="/app-updates" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Smartphone size={20}/> App Chofer OTA</NavLink></li>
+            )}
             <li><NavLink to="/configuracion" className={({isActive}) => isActive ? 'nav-link active' : 'nav-link'}><Settings size={20}/> SaaS Config</NavLink></li>
           </>
         )}
@@ -155,10 +161,17 @@ function App() {
       <div className="layout">
         <Sidebar role={role} onLogout={handleLogout} />
         <div className="content">
+          <div style={{ position: 'sticky', top: 0, zIndex: 1, marginBottom: '1rem', paddingBottom: '0.5rem' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280' }}>
+              Backoffice v{String(import.meta.env.VITE_APP_VERSION || import.meta.env.VITE_VERSION || import.meta.env.npm_package_version || 'dev')}
+            </div>
+          </div>
+
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/pedidos" element={<Pedidos />} />
             <Route path="/viajes" element={<Viajes />} />
+            <Route path="/reparto-local" element={<RepartoLocal />} />
             <Route path="/caja" element={<Caja />} />
             <Route path="/viaticos" element={<Viaticos />} />
             <Route path="/cuentas-corrientes" element={<CuentasCorrientes />} />
@@ -177,6 +190,7 @@ function App() {
                 <Route path="/reportes" element={<Reportes />} />
                 <Route path="/usuarios" element={<Usuarios />} />
                 <Route path="/auditoria" element={<Auditoria />} />
+                {role === 'superadmin_saas' && <Route path="/app-updates" element={<AppUpdates />} />}
                 <Route path="/configuracion" element={<Configuracion />} />
               </>
             )}

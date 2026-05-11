@@ -1,0 +1,109 @@
+name: Transportadora release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      force_deploy_cloudrun:
+        description: "Forzar despliegue Cloud Run"
+        required: false
+        default: "false"
+      force_chofer_ota:
+        description: "Forzar release OTA de app chofer"
+        required: false
+        default: "false"
+      force_chofer_apk:
+        description: "Forzar publicacion APK de app chofer"
+        required: false
+        default: "false"
+
+concurrency:
+  group: transportadora-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect:
+    runs-on: windows-latest
+    outputs:
+      deploy_cloudrun: ${{ steps.scope.outputs.deploy_cloudrun }}
+      publish_ota: ${{ steps.scope.outputs.publish_ota }}
+      publish_apk: ${{ steps.scope.outputs.publish_apk }}
+      changed_files: ${{ steps.scope.outputs.changed_files }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: scope
+        shell: pwsh
+        run: |
+          $base = "${{ github.event.before }}"
+          if (-not $base -or $base -eq "0000000000000000000000000000000000000000") { $base = "HEAD^" }
+          ./scripts/detect-release-scope.ps1 -BaseRef $base -HeadRef HEAD
+
+  deploy-cloudrun:
+    needs: detect
+    if: needs.detect.outputs.deploy_cloudrun == 'true' || github.event.inputs.force_deploy_cloudrun == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build backend
+        shell: pwsh
+        run: cd backend; npm ci; npm run build
+      - name: Build frontend
+        shell: pwsh
+        run: cd frontend; npm ci; npm run build
+      - name: Build landing
+        shell: pwsh
+        run: cd landing-saas; npm ci; npm run build
+      - name: Deploy Cloud Run
+        shell: pwsh
+        run: ./scripts/deploy-cloudrun.ps1 -ProjectId "${{ secrets.GCP_PROJECT_ID }}" -SkipLocalBuild
+
+  publish-chofer-ota:
+    needs: detect
+    if: needs.detect.outputs.publish_ota == 'true' || github.event.inputs.force_chofer_ota == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish OTA bundle
+        shell: pwsh
+        env:
+          TRANSPORTADORA_API_URL: ${{ secrets.TRANSPORTADORA_API_URL }}
+          TRANSPORTADORA_ADMIN_USER: ${{ secrets.TRANSPORTADORA_ADMIN_USER }}
+          TRANSPORTADORA_ADMIN_PASSWORD: ${{ secrets.TRANSPORTADORA_ADMIN_PASSWORD }}
+        run: ./scripts/publish-chofer-bundle.ps1 -Notes "Release automatico $env:GITHUB_SHA"
+
+  publish-chofer-apk:
+    needs: detect
+    if: needs.detect.outputs.publish_apk == 'true' || github.event.inputs.force_chofer_apk == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish APK
+        shell: pwsh
+        env:
+          TRANSPORTADORA_API_URL: ${{ secrets.TRANSPORTADORA_API_URL }}
+          TRANSPORTADORA_ADMIN_USER: ${{ secrets.TRANSPORTADORA_ADMIN_USER }}
+          TRANSPORTADORA_ADMIN_PASSWORD: ${{ secrets.TRANSPORTADORA_ADMIN_PASSWORD }}
+        run: ./scripts/publish-apk.ps1 -Notes "APK automatico $env:GITHUB_SHA"

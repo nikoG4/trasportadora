@@ -2,23 +2,33 @@ node_modules/
 dist/
 build/
 .vite/
+.app-chofer-vite.pid
 
 *.log
 *.err.log
 
 *.apk
 *.aab
+chofer-ota-*.zip
 
 cloudflared.exe
 
 backend/transportadora.db-journal
 backend/transportadora.db-wal
 backend/transportadora.db-shm
+backend/firebase-service-account.json
+backend/uploads/
+app-chofer/android/app/google-services.json
 
 app-chofer/android/.gradle/
 app-chofer/android/build/
 app-chofer/android/app/build/
+app-chofer/android/app/src/main/assets/
 app-chofer/android/local.properties
+app-chofer/ota-bundles/
+app-chofer/backend/
+app-chofer/frontend/
+app-chofer/scripts/
 
 e2e-tests/node_modules/
 playwright-report/
@@ -30,3 +40,12 @@ test-results/
 
 .claude/
 playwright-audit/
+apk_posprinter_extract/
+apk_posprinter_jadx/
+manual_pages/
+manual_tdr058bt_text.txt
+posprinter_strings.txt
+APK_INFO.md
+CHECKLIST_SERVIDOR.md
+GUIA_DESPLIEGUE_GCLOUD.md
+RESUMEN_DESPLIEGUE.md

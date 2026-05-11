@@ -8,9 +8,17 @@
 **/.gradle
 **/android/app/build
 **/android/capacitor-cordova-android-plugins/build
+app-chofer/ota-bundles
 **/playwright-report
 playwright-audit
 e2e-tests/node_modules
 cloudflared.exe
+tools
+apk_posprinter_extract
+apk_posprinter_jadx
+manual_pages
+manual_tdr058bt_text.txt
+posprinter_strings.txt
 *.log
 *.apk
+!backend/downloads/*.apk

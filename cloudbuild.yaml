@@ -37,9 +37,9 @@ steps:
       - --concurrency
       - "80"
       - --set-env-vars
-      - NODE_ENV=production
+      - NODE_ENV=production,APP_UPDATE_STORAGE_BUCKET=transportadora-ota-754837345818
       - --set-secrets
-      - DATABASE_URL=database-url:latest,JWT_SECRET=jwt-secret:latest,REFRESH_TOKEN_SECRET=refresh-token-secret:latest
+      - JWT_SECRET=jwt-secret:latest,REFRESH_TOKEN_SECRET=refresh-token-secret:latest,DATABASE_URL=database-url:latest,FIREBASE_SERVICE_ACCOUNT_JSON=firebase-service-account-json:latest,APP_UPDATE_SIGNING_PRIVATE_KEY_PEM=app-update-signing-private-key-pem:latest
 
 substitutions:
   _REGION: us-central1

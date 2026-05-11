@@ -8,6 +8,7 @@ RUN npm run build
 FROM node:22-bookworm-slim AS chofer-build
 WORKDIR /app/app-chofer
 COPY app-chofer/package*.json ./
+COPY app-chofer/patches ./patches
 RUN npm ci
 COPY app-chofer/ ./
 ENV VITE_BASE_PATH=/chofer/
@@ -42,6 +43,7 @@ RUN apt-get update \
   && npm cache clean --force
 COPY --from=backend-build /app/backend/dist ./dist
 COPY backend/transportadora.db ./transportadora.db
+COPY backend/downloads ./downloads
 COPY --from=frontend-build /app/frontend/dist ./public
 COPY --from=chofer-build /app/app-chofer/dist ./chofer
 COPY --from=landing-build /app/landing-saas/dist ./landing

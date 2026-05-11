@@ -4,6 +4,51 @@ import { createPgDatabase } from './pg-sync-db';
 
 const db: any = process.env.DATABASE_URL ? createPgDatabase() : new Database('transportadora.db');
 
+function relaxGlobalUniqueConstraints() {
+  const tables = ['sucursales', 'vehiculos', 'pedidos', 'rrhh_empleados', 'inventario_deposito'];
+
+  if (process.env.DATABASE_URL) {
+    for (const [table, columns] of [
+      ['sucursales', ['codigo']],
+      ['vehiculos', ['chapa']],
+      ['pedidos', ['numero_guia']],
+      ['rrhh_empleados', ['documento']],
+      ['inventario_deposito', ['codigo']]
+    ] as const) {
+      for (const column of columns) {
+        try { db.exec(`ALTER TABLE ${table} DROP CONSTRAINT IF EXISTS ${table}_${column}_key;`); } catch (e) {}
+      }
+    }
+    return;
+  }
+
+  for (const table of tables) {
+    try {
+      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as any;
+      const createSql = String(row?.sql || '');
+      if (!/\bUNIQUE\b/i.test(createSql)) continue;
+
+      const tempTable = `${table}_tenant_relaxed`;
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      const columnList = columns.map(column => column.name).join(', ');
+      const relaxedCreate = createSql
+        .replace(new RegExp(`CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?${table}`, 'i'), `CREATE TABLE ${tempTable}`)
+        .replace(/\bTEXT\s+UNIQUE\b/gi, 'TEXT')
+        .replace(/,\s*UNIQUE\s*\([^)]*\)/gi, '');
+
+      db.exec('PRAGMA foreign_keys = OFF;');
+      db.exec(`DROP TABLE IF EXISTS ${tempTable};`);
+      db.exec(relaxedCreate);
+      db.exec(`INSERT INTO ${tempTable} (${columnList}) SELECT ${columnList} FROM ${table};`);
+      db.exec(`DROP TABLE ${table};`);
+      db.exec(`ALTER TABLE ${tempTable} RENAME TO ${table};`);
+      db.exec('PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      try { db.exec('PRAGMA foreign_keys = ON;'); } catch {}
+    }
+  }
+}
+
 export function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -17,7 +62,7 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS sucursales (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nombre TEXT,
-      codigo TEXT UNIQUE,
+      codigo TEXT,
       direccion TEXT,
       ciudad TEXT,
       departamento TEXT,
@@ -43,17 +88,19 @@ export function initDb() {
 
     CREATE TABLE IF NOT EXISTS choferes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      empleado_id INTEGER,
       nombre TEXT,
       documento TEXT,
       licencia TEXT,
       telefono TEXT,
       estado TEXT DEFAULT 'activo',
-      vencimiento_licencia TEXT DEFAULT '2026-12-31'
+      vencimiento_licencia TEXT DEFAULT '2026-12-31',
+      FOREIGN KEY(empleado_id) REFERENCES rrhh_empleados(id)
     );
 
     CREATE TABLE IF NOT EXISTS vehiculos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      chapa TEXT UNIQUE,
+      chapa TEXT,
       marca TEXT,
       modelo TEXT,
       capacidad REAL,
@@ -81,7 +128,7 @@ export function initDb() {
 
     CREATE TABLE IF NOT EXISTS pedidos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      numero_guia TEXT UNIQUE,
+      numero_guia TEXT,
       cliente_pagador_id INTEGER,
       remitente_nombre TEXT,
       remitente_doc TEXT,
@@ -127,11 +174,14 @@ export function initDb() {
 
     CREATE TABLE IF NOT EXISTS tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER DEFAULT 1,
+      viaje_id INTEGER,
       vehiculo_id INTEGER,
       chofer_id INTEGER,
       latitud REAL,
       longitud REAL,
       timestamp TEXT,
+      FOREIGN KEY(viaje_id) REFERENCES viajes(id),
       FOREIGN KEY(vehiculo_id) REFERENCES vehiculos(id),
       FOREIGN KEY(chofer_id) REFERENCES choferes(id)
     );
@@ -152,6 +202,17 @@ export function initDb() {
       clave TEXT NOT NULL,
       valor TEXT,
       UNIQUE(tenant_id, clave)
+    );
+
+    CREATE TABLE IF NOT EXISTS header_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      name TEXT NOT NULL DEFAULT 'Membrete principal',
+      paper_width_default INTEGER NOT NULL DEFAULT 58,
+      blocks_json TEXT NOT NULL DEFAULT '[]',
+      version INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, name)
     );
 
     CREATE TABLE IF NOT EXISTS movimientos_caja (
@@ -219,7 +280,7 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS rrhh_empleados (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       nombre TEXT NOT NULL,
-      documento TEXT UNIQUE,
+      documento TEXT,
       telefono TEXT,
       email TEXT,
       cargo TEXT,
@@ -352,7 +413,7 @@ export function initDb() {
     CREATE TABLE IF NOT EXISTS inventario_deposito (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sucursal_id INTEGER,
-      codigo TEXT UNIQUE,
+      codigo TEXT,
       descripcion TEXT NOT NULL,
       categoria TEXT,
       cantidad REAL DEFAULT 0,
@@ -512,19 +573,149 @@ export function initDb() {
 
     CREATE TABLE IF NOT EXISTS paradas_ruta (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER DEFAULT 1,
       ruta_id INTEGER NOT NULL,
+      viaje_id INTEGER,
       pedido_id INTEGER,
       orden INTEGER NOT NULL,
       tipo_parada TEXT NOT NULL,
+      nombre_contacto TEXT,
+      documento_contacto TEXT,
+      telefono_contacto TEXT,
       direccion TEXT,
+      referencia_direccion TEXT,
       latitud REAL,
       longitud REAL,
+      ventana_inicio TEXT,
+      ventana_fin TEXT,
       eta TEXT,
-      estado TEXT DEFAULT 'pendiente',
+      estado TEXT DEFAULT 'PENDIENTE',
       llegada_real TEXT,
+      salida_real TEXT,
       evidencia_json TEXT DEFAULT '{}',
+      observaciones TEXT,
+      motivo_fallo TEXT,
+      comprobante_impreso INTEGER DEFAULT 0,
+      sync_status TEXT DEFAULT 'sincronizado',
+      incidencia_id INTEGER,
       FOREIGN KEY(ruta_id) REFERENCES rutas_planificadas(id),
-      FOREIGN KEY(pedido_id) REFERENCES pedidos(id)
+      FOREIGN KEY(viaje_id) REFERENCES viajes(id),
+      FOREIGN KEY(pedido_id) REFERENCES pedidos(id),
+      FOREIGN KEY(incidencia_id) REFERENCES incidencias_operativas(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS eventos_reparto_local (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      viaje_id INTEGER,
+      parada_id INTEGER,
+      pedido_id INTEGER,
+      chofer_id INTEGER,
+      tipo_evento TEXT NOT NULL,
+      payload_json TEXT DEFAULT '{}',
+      latitud REAL,
+      longitud REAL,
+      fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+      sync_source TEXT DEFAULT 'server',
+      creado_en_app INTEGER DEFAULT 0,
+      estado_sync TEXT DEFAULT 'sincronizado',
+      idempotency_key TEXT,
+      UNIQUE(tenant_id, idempotency_key),
+      FOREIGN KEY(viaje_id) REFERENCES viajes(id),
+      FOREIGN KEY(parada_id) REFERENCES paradas_ruta(id),
+      FOREIGN KEY(pedido_id) REFERENCES pedidos(id),
+      FOREIGN KEY(chofer_id) REFERENCES choferes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS chofer_device_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      user_id INTEGER,
+      chofer_id INTEGER NOT NULL,
+      token TEXT NOT NULL,
+      platform TEXT DEFAULT 'android',
+      app_version TEXT,
+      activo INTEGER DEFAULT 1,
+      ultimo_registro TEXT DEFAULT CURRENT_TIMESTAMP,
+      creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, token),
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(chofer_id) REFERENCES choferes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS app_update_releases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      app TEXT NOT NULL DEFAULT 'chofer',
+      platform TEXT NOT NULL DEFAULT 'android',
+      channel TEXT NOT NULL DEFAULT 'stable',
+      version_web TEXT NOT NULL,
+      native_shell_version TEXT,
+      min_native_version TEXT,
+      max_native_version TEXT,
+      url_zip TEXT,
+      storage_provider TEXT DEFAULT 'local',
+      storage_ref TEXT,
+      download_token TEXT,
+      sha256 TEXT NOT NULL,
+      signature TEXT,
+      signature_payload TEXT,
+      signature_algorithm TEXT DEFAULT 'ECDSA_P256_SHA256',
+      estado TEXT NOT NULL DEFAULT 'DRAFT',
+      rollout_percent INTEGER DEFAULT 0,
+      obligatorio INTEGER DEFAULT 0,
+      notas TEXT,
+      size_bytes INTEGER DEFAULT 0,
+      created_by INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      activated_at TEXT,
+      revoked_at TEXT,
+      UNIQUE(tenant_id, app, platform, channel, version_web),
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+      FOREIGN KEY(created_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS app_update_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      app TEXT NOT NULL DEFAULT 'chofer',
+      platform TEXT NOT NULL DEFAULT 'android',
+      device_id TEXT NOT NULL,
+      user_id INTEGER,
+      chofer_id INTEGER,
+      native_version TEXT,
+      bundle_actual TEXT,
+      channel TEXT DEFAULT 'stable',
+      ultimo_check TEXT DEFAULT CURRENT_TIMESTAMP,
+      ultimo_error TEXT,
+      metadata_json TEXT DEFAULT '{}',
+      UNIQUE(tenant_id, app, platform, device_id),
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(chofer_id) REFERENCES choferes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS app_update_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL,
+      release_id INTEGER,
+      app TEXT NOT NULL DEFAULT 'chofer',
+      platform TEXT NOT NULL DEFAULT 'android',
+      device_id TEXT,
+      user_id INTEGER,
+      chofer_id INTEGER,
+      native_version TEXT,
+      bundle_version TEXT,
+      bundle_id TEXT,
+      event_type TEXT NOT NULL,
+      status TEXT,
+      error TEXT,
+      metadata_json TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+      FOREIGN KEY(release_id) REFERENCES app_update_releases(id),
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(chofer_id) REFERENCES choferes(id)
     );
 
     CREATE TABLE IF NOT EXISTS facturas (
@@ -575,9 +766,19 @@ export function initDb() {
   try { db.exec("ALTER TABLE sucursales ADD COLUMN longitud REAL;"); } catch (e) {}
   try { db.exec("ALTER TABLE clientes ADD COLUMN latitud REAL;"); } catch (e) {}
   try { db.exec("ALTER TABLE clientes ADD COLUMN longitud REAL;"); } catch (e) {}
+  try { db.exec("ALTER TABLE choferes ADD COLUMN empleado_id INTEGER;"); } catch (e) {}
   try { db.exec("ALTER TABLE viajes ADD COLUMN tipo_viaje TEXT DEFAULT 'interurbano';"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN zona TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN ciudad TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN fecha_fin TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN kilometros_estimados REAL DEFAULT 0;"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN duracion_estimada_min REAL DEFAULT 0;"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN progreso_json TEXT DEFAULT '{}';"); } catch (e) {}
+  try { db.exec("ALTER TABLE viajes ADD COLUMN observaciones TEXT;"); } catch (e) {}
   try { db.exec("ALTER TABLE pedidos ADD COLUMN motivo_devolucion TEXT;"); } catch (e) {}
   try { db.exec("ALTER TABLE tracking ADD COLUMN chofer_id INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE tracking ADD COLUMN tenant_id INTEGER DEFAULT 1;"); } catch (e) {}
+  try { db.exec("ALTER TABLE tracking ADD COLUMN viaje_id INTEGER;"); } catch (e) {}
   try { db.exec("ALTER TABLE users ADD COLUMN tenant_id INTEGER DEFAULT 1;"); } catch (e) {}
   try { db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT;"); } catch (e) {}
   try { db.exec("ALTER TABLE users ADD COLUMN estado TEXT DEFAULT 'activo';"); } catch (e) {}
@@ -600,12 +801,36 @@ export function initDb() {
   try { db.exec("ALTER TABLE vehiculos ADD COLUMN costo_km REAL DEFAULT 0;"); } catch (e) {}
   try { db.exec("ALTER TABLE vehiculos ADD COLUMN consumo_estimado REAL DEFAULT 0;"); } catch (e) {}
   try { db.exec("ALTER TABLE vehiculos ADD COLUMN tipo_carga_soportada TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN parada_id INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN viaje_id INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN tipo_evidencia TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN latitud REAL;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN longitud REAL;"); } catch (e) {}
+  try { db.exec("ALTER TABLE evidencias_pedido ADD COLUMN metadata_json TEXT DEFAULT '{}';"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN tenant_id INTEGER DEFAULT 1;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN viaje_id INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN nombre_contacto TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN documento_contacto TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN telefono_contacto TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN referencia_direccion TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN ventana_inicio TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN ventana_fin TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN salida_real TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN observaciones TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN motivo_fallo TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN comprobante_impreso INTEGER DEFAULT 0;"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN sync_status TEXT DEFAULT 'sincronizado';"); } catch (e) {}
+  try { db.exec("ALTER TABLE paradas_ruta ADD COLUMN incidencia_id INTEGER;"); } catch (e) {}
+  try { db.exec("UPDATE paradas_ruta SET tenant_id = 1 WHERE tenant_id IS NULL;"); } catch (e) {}
+  try { db.exec("ALTER TABLE chofer_device_tokens ADD COLUMN user_id INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE chofer_device_tokens ADD COLUMN app_version TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE chofer_device_tokens ADD COLUMN ultimo_registro TEXT DEFAULT CURRENT_TIMESTAMP;"); } catch (e) {}
 
   const tenantTables = [
     'sucursales', 'clientes', 'choferes', 'vehiculos', 'viajes', 'pedidos',
     'evidencias_pedido', 'tracking', 'combustible', 'configuracion',
     'movimientos_caja', 'rendiciones_chofer', 'gastos_operativos',
-    'cuentas_corrientes_clientes', 'pagos_clientes', 'rrhh_empleados',
+    'cuentas_corrientes_clientes', 'pagos_clientes', 'header_templates', 'eventos_reparto_local', 'chofer_device_tokens', 'rrhh_empleados',
     'rrhh_asistencias', 'rrhh_licencias', 'rrhh_nomina',
     'rrhh_capacitaciones', 'proveedores', 'compras',
     'mantenimientos_vehiculo', 'incidencias_operativas',
@@ -615,6 +840,7 @@ export function initDb() {
     try { db.exec(`ALTER TABLE ${table} ADD COLUMN tenant_id INTEGER DEFAULT 1;`); } catch (e) {}
     try { db.exec(`UPDATE ${table} SET tenant_id = 1 WHERE tenant_id IS NULL;`); } catch (e) {}
   }
+  relaxGlobalUniqueConstraints();
 
   // Create admin user
   db.prepare("INSERT OR IGNORE INTO tenants (id, nombre, ruc, dominio, plan, estado, configuracion_json) VALUES (1, 'Empresa Demo Transportadora', '80012345-6', 'demo.local', 'demo', 'activo', '{}')").run();
@@ -654,6 +880,10 @@ export function initDb() {
   insertConfig.run(1, 'membrete', 'TRANSPORTADORA PARAGUAY SAAS\\nRUC: 80012345-6\\nTel: 0981 000 000');
   insertConfig.run(1, 'ticket_width_chars', '32');
   insertConfig.run(1, 'ticket_copies', '2');
+  insertConfig.run(1, 'map_default_label', 'Ciudad del Este');
+  insertConfig.run(1, 'map_default_lat', '-25.5167');
+  insertConfig.run(1, 'map_default_lng', '-54.6167');
+  insertConfig.run(1, 'map_default_zoom', '13');
   insertConfig.run(1, 'ticket_fields', JSON.stringify({
     numero_guia: true,
     fecha: true,
@@ -677,6 +907,34 @@ export function initDb() {
     estado: true,
     observaciones: true
   }));
+
+  const existingHeader = db.prepare("SELECT id FROM header_templates WHERE tenant_id = ? LIMIT 1").get(1) as any;
+  if (!existingHeader) {
+    const oldHeader = db.prepare("SELECT valor FROM configuracion WHERE tenant_id = ? AND clave = 'membrete'").get(1) as any;
+    const lines = String(oldHeader?.valor || 'TRANSPORTADORA PARAGUAY SAAS\\nRUC: 80012345-6\\nTel: 0981 000 000')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .split(/\\n|\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const blocks = lines.map((line, index) => ({
+      id: `legacy-text-${index + 1}`,
+      type: 'TEXT',
+      visible: true,
+      order: index + 1,
+      alignment: 'CENTER',
+      text: line,
+      fontSize: index === 0 ? 18 : 14,
+      bold: index === 0,
+      marginTop: index === 0 ? 2 : 0,
+      marginBottom: 2
+    }));
+    db.prepare(`
+      INSERT INTO header_templates (tenant_id, name, paper_width_default, blocks_json, version, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(1, 'Membrete principal', 58, JSON.stringify(blocks), 1);
+  }
 
   // Seed Data
   seedData();
