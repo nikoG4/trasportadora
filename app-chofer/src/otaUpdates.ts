@@ -20,6 +20,7 @@ export type OtaStatus = {
   error?: string;
   nativeUpdateAvailable?: boolean;
   nativeUpdateRequired?: boolean;
+  installedNativeVersion?: string;
   nativeVersion?: string;
   apkUrl?: string;
 };
@@ -158,6 +159,7 @@ async function checkNativeApkUpdate(apiUrl: string, token: string | null | undef
     message: `${native.updateRequired ? 'Actualizacion APK requerida' : 'Nueva APK disponible'}${native.latest_native_version ? `: v${native.latest_native_version}` : ''}.`,
     nativeUpdateAvailable: true,
     nativeUpdateRequired: Boolean(native.updateRequired),
+    installedNativeVersion: nativeVersion,
     nativeVersion: native.latest_native_version,
     apkUrl: native.apk_url,
     error: native.updateRequired ? 'Esta version de APK quedo vieja para los proximos cambios.' : undefined
@@ -235,7 +237,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
       const current = await CapacitorUpdater.current();
       const device = await CapacitorUpdater.getDeviceId();
       const currentVersion = current.bundle?.version || ready.bundle?.version || 'builtin';
-      const nativeVersion = current.native || CHOFER_NATIVE_VERSION;
+      const nativeVersion = CHOFER_NATIVE_VERSION;
       const pendingRaw = localStorage.getItem(OTA_PENDING_KEY);
       if (pendingRaw && pendingRaw.includes(`"version":"${currentVersion}"`)) clearPendingBundle();
 
@@ -293,6 +295,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
           nativeUpdateAvailable: true,
           nativeUpdateRequired: true,
           nativeVersion: latest.native.latest_native_version,
+          installedNativeVersion: nativeVersion,
           apkUrl: latest.native.apk_url,
           error: 'La APK instalada no es compatible con la ultima version.'
         });

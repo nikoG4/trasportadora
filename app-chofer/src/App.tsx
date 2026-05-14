@@ -77,7 +77,7 @@ type DriverSession = {
 };
 
 function VersionIndicator({ otaStatus }: { otaStatus: OtaStatus }) {
-  const native = otaStatus?.nativeVersion || CHOFER_NATIVE_VERSION;
+  const native = otaStatus?.installedNativeVersion || CHOFER_NATIVE_VERSION;
   const web = CHOFER_WEB_VERSION;
   return (
     <div style={{ position: 'absolute', right: '1rem', top: '0.9rem', fontSize: '0.7rem', fontWeight: 700, opacity: 0.95 }}>
