@@ -23,6 +23,8 @@ import Auditoria from './pages/Auditoria';
 import AppUpdates from './pages/AppUpdates';
 import './index.css';
 
+const BACKOFFICE_VERSION = String(import.meta.env.VITE_APP_VERSION || import.meta.env.VITE_VERSION || 'dev');
+
 function Sidebar({ role, onLogout }: { role: string, onLogout: () => void }) {
   const tenantName = localStorage.getItem('tenantName') || 'Empresa Demo';
   return (
@@ -74,6 +76,9 @@ function Sidebar({ role, onLogout }: { role: string, onLogout: () => void }) {
         )}
       </ul>
       <div style={{ padding: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
+        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textAlign: 'center', marginBottom: '0.75rem' }}>
+          Backoffice v{BACKOFFICE_VERSION}
+        </div>
         <button className="btn btn-outline" style={{ width: '100%', justifyContent: 'center' }} onClick={onLogout}>Cerrar Sesión</button>
       </div>
     </div>
@@ -163,7 +168,7 @@ function App() {
         <div className="content">
           <div style={{ position: 'sticky', top: 0, zIndex: 1, marginBottom: '1rem', paddingBottom: '0.5rem' }}>
             <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6b7280' }}>
-              Backoffice v{String(import.meta.env.VITE_APP_VERSION || import.meta.env.VITE_VERSION || import.meta.env.npm_package_version || 'dev')}
+              Backoffice v{BACKOFFICE_VERSION}
             </div>
           </div>
 

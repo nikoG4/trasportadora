@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AlertTriangle, Ban, CheckCircle, Pause, RefreshCw, RotateCcw, Rocket, Smartphone, Upload } from 'lucide-react';
+import { AlertTriangle, Ban, CheckCircle, Download, Pause, RefreshCw, RotateCcw, Rocket, Smartphone, Upload } from 'lucide-react';
 
 type Release = {
   id: number;
@@ -313,10 +313,17 @@ export default function AppUpdates() {
           Use esto cuando el cambio requiere plugins, permisos, AndroidManifest, Firebase o codigo nativo. La app mostrara un aviso con boton de descarga.
         </p>
         {nativeConfig?.latest_native_version && (
-          <div style={{ background: '#eff6ff', color: '#1e40af', padding: '0.75rem', borderRadius: 6, marginBottom: '1rem' }}>
-            APK publicada: v{nativeConfig.latest_native_version}
-            {nativeConfig.size_bytes ? ` - ${bytes(Number(nativeConfig.size_bytes))}` : ''}
-            {nativeConfig.published_at ? ` - ${new Date(nativeConfig.published_at).toLocaleString()}` : ''}
+          <div style={{ background: '#eff6ff', color: '#1e40af', padding: '0.75rem', borderRadius: 6, marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              APK publicada: v{nativeConfig.latest_native_version}
+              {nativeConfig.size_bytes ? ` - ${bytes(Number(nativeConfig.size_bytes))}` : ''}
+              {nativeConfig.published_at ? ` - ${new Date(nativeConfig.published_at).toLocaleString()}` : ''}
+            </div>
+            {nativeConfig.apk_url && (
+              <a className="btn btn-outline" href={nativeConfig.apk_url} target="_blank" rel="noopener noreferrer">
+                <Download size={16} /> Descargar APK
+              </a>
+            )}
           </div>
         )}
         <form onSubmit={submitNativeApk}>

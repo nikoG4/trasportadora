@@ -6,7 +6,7 @@ import { Geolocation } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { PushNotifications } from '@capacitor/push-notifications';
 import './index.css';
-import { reloadForOtaUpdate, runChoferOtaCheck, tryQueuePendingOta, type OtaStatus } from './otaUpdates';
+import { CHOFER_NATIVE_VERSION, CHOFER_WEB_VERSION, reloadForOtaUpdate, runChoferOtaCheck, tryQueuePendingOta, type OtaStatus } from './otaUpdates';
 
 const DEFAULT_NATIVE_API_URL = 'https://transportadora-ayr5ylhexa-uc.a.run.app/api';
 
@@ -76,12 +76,9 @@ type DriverSession = {
   choferNombre: string;
 };
 
-const APP_VERSION_WEB = String(import.meta.env.VITE_APP_VERSION || import.meta.env.VITE_VERSION || import.meta.env.npm_package_version || 'dev');
-const APP_VERSION_NATIVE_FALLBACK = String(import.meta.env.VITE_NATIVE_SHELL_VERSION || 'n/a');
-
 function VersionIndicator({ otaStatus }: { otaStatus: OtaStatus }) {
-  const native = otaStatus?.nativeVersion || APP_VERSION_NATIVE_FALLBACK;
-  const web = APP_VERSION_WEB;
+  const native = otaStatus?.nativeVersion || CHOFER_NATIVE_VERSION;
+  const web = CHOFER_WEB_VERSION;
   return (
     <div style={{ position: 'absolute', right: '1rem', top: '0.9rem', fontSize: '0.7rem', fontWeight: 700, opacity: 0.95 }}>
       v{web} · APK v{native}
@@ -2645,9 +2642,10 @@ function App() {
   const [otaCritical, setOtaCritical] = useState(false);
 
   const checkOta = () => {
+    const sessionToken = choferId && choferId !== 'null' ? localStorage.getItem('choferToken') : null;
     runChoferOtaCheck({
       apiUrl: getApiUrl(),
-      token: localStorage.getItem('choferToken'),
+      token: sessionToken,
       choferId,
       safeToQueue: !otaCritical,
       onStatus: setOtaStatus

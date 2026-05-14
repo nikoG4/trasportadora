@@ -65,6 +65,9 @@ type OtaOptions = {
 
 let checkInFlight: Promise<OtaStatus> | null = null;
 
+export const CHOFER_WEB_VERSION = String(import.meta.env.VITE_APP_VERSION || import.meta.env.VITE_VERSION || 'dev');
+export const CHOFER_NATIVE_VERSION = String(import.meta.env.VITE_NATIVE_SHELL_VERSION || FALLBACK_NATIVE_VERSION);
+
 function authHeaders(token?: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -223,6 +226,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
       options.onStatus?.(next);
       return next;
     };
+    let phase = 'startup';
 
     try {
       status({ supported: true, busy: true, updateReady: false, message: 'Verificando app...' });
@@ -231,7 +235,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
       const current = await CapacitorUpdater.current();
       const device = await CapacitorUpdater.getDeviceId();
       const currentVersion = current.bundle?.version || ready.bundle?.version || 'builtin';
-      const nativeVersion = current.native || import.meta.env.VITE_NATIVE_SHELL_VERSION || FALLBACK_NATIVE_VERSION;
+      const nativeVersion = current.native || CHOFER_NATIVE_VERSION;
       const pendingRaw = localStorage.getItem(OTA_PENDING_KEY);
       if (pendingRaw && pendingRaw.includes(`"version":"${currentVersion}"`)) clearPendingBundle();
 
@@ -272,6 +276,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
         device_id: device.deviceId,
         chofer_id: options.choferId || localStorage.getItem('choferId') || ''
       });
+      phase = 'latest';
       const latestResponse = await fetch(`${options.apiUrl}/app-updates/chofer/latest?${params.toString()}`, {
         headers: authHeaders(token)
       });
@@ -329,6 +334,7 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
         native_version: nativeVersion,
         bundle_version: latest.release.version_web
       });
+      phase = 'download';
       await verifyBundleDownload(latest.release);
       const bundle = await CapacitorUpdater.download({
         url: latest.release.url_zip,
@@ -371,11 +377,15 @@ export async function runChoferOtaCheck(options: OtaOptions): Promise<OtaStatus>
       });
     } catch (err: any) {
       const message = err.message || 'No se pudo actualizar app';
+      const isPassiveCheckFailure = phase === 'latest' && (message === 'No se pudo consultar OTA' || err instanceof TypeError || String(message).includes('Failed to fetch'));
       await reportOtaEvent(options.apiUrl, token, {
         event_type: 'FAILED',
         status: 'error',
         error: message
       });
+      if (isPassiveCheckFailure) {
+        return status({ supported: true, busy: false, updateReady: false, message: '' });
+      }
       return status({ supported: true, busy: false, updateReady: false, message, error: message });
     } finally {
       checkInFlight = null;
