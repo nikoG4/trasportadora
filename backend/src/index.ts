@@ -177,6 +177,12 @@ function attachOptionalAuth(req: express.Request, res: express.Response, next: e
     req.tenantId = req.user.tenant_id;
     next();
   } catch {
+    if (isPublicApiPath(req.path)) {
+      const decoded = jwt.decode(token) as any;
+      const tenantId = Number(decoded?.tenant_id || 0);
+      if (Number.isFinite(tenantId) && tenantId > 0) req.tenantId = tenantId;
+      return next();
+    }
     res.status(401).json({ error: 'Token invalido o expirado' });
   }
 }
