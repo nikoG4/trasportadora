@@ -1,9 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Edit, Plus, X } from 'lucide-react';
 
 export default function Clientes() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({ nombre: '', ruc: '', direccion: '', telefono: '', latitud: '', longitud: '' });
   const [mapsLink, setMapsLink] = useState('');
 
@@ -37,27 +38,45 @@ export default function Clientes() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    fetch('/api/clientes', {
-      method: 'POST',
+    fetch(editingId ? `/api/clientes/${editingId}` : '/api/clientes', {
+      method: editingId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
     }).then(() => {
       setShowModal(false);
+      setEditingId(null);
       setFormData({ nombre: '', ruc: '', direccion: '', telefono: '', latitud: '', longitud: '' });
       setMapsLink('');
       loadClientes();
     });
   };
 
+  const openNew = () => {
+    setEditingId(null);
+    setFormData({ nombre: '', ruc: '', direccion: '', telefono: '', latitud: '', longitud: '' });
+    setMapsLink('');
+    setShowModal(true);
+  };
+
+  const openEdit = (cliente: any) => {
+    setEditingId(cliente.id);
+    setFormData({
+      nombre: cliente.nombre || '',
+      ruc: cliente.ruc || '',
+      direccion: cliente.direccion || '',
+      telefono: cliente.telefono || '',
+      latitud: cliente.latitud === null || cliente.latitud === undefined ? '' : String(cliente.latitud),
+      longitud: cliente.longitud === null || cliente.longitud === undefined ? '' : String(cliente.longitud)
+    });
+    setMapsLink('');
+    setShowModal(true);
+  };
+
   return (
     <div>
       <div className="page-header">
         <h1>Gestión de Clientes</h1>
-        <button className="btn btn-primary" onClick={() => {
-          setFormData({ nombre: '', ruc: '', direccion: '', telefono: '', latitud: '', longitud: '' });
-          setMapsLink('');
-          setShowModal(true);
-        }}>
+        <button className="btn btn-primary" onClick={openNew}>
           <Plus size={20} /> Nuevo Cliente
         </button>
       </div>
@@ -73,6 +92,7 @@ export default function Clientes() {
               <th>Teléfono</th>
               <th>Latitud</th>
               <th>Longitud</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -85,6 +105,7 @@ export default function Clientes() {
                 <td>{c.telefono}</td>
                 <td>{c.latitud}</td>
                 <td>{c.longitud}</td>
+                <td><button className="btn btn-outline" onClick={() => openEdit(c)}><Edit size={16} /> Editar</button></td>
               </tr>
             ))}
           </tbody>
@@ -95,8 +116,8 @@ export default function Clientes() {
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <h2>Nuevo Cliente</h2>
-              <button onClick={() => setShowModal(false)} style={{background:'none',border:'none',cursor:'pointer'}}><X/></button>
+              <h2>{editingId ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
+              <button onClick={() => { setShowModal(false); setEditingId(null); }} style={{background:'none',border:'none',cursor:'pointer'}}><X/></button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="form-group">

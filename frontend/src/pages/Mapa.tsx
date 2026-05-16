@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Package, Truck } from 'lucide-react';
+import { connectBackofficeRealtime } from '../realtime';
 
 // Fix for default marker icons in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -31,37 +32,61 @@ const deliveryIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
+function toNumber(value: any) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('adminToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export default function Mapa() {
   const [tracking, setTracking] = useState<any[]>([]);
   const [pedidosDomicilio, setPedidosDomicilio] = useState<any[]>([]);
   const [viajesActivos, setViajesActivos] = useState<any[]>([]);
+  const [mapDefaults, setMapDefaults] = useState({ center: [-25.5167, -54.6167] as [number, number], zoom: 13 });
 
   useEffect(() => {
-    // In a real app this would use WebSockets or polling
+    fetch('/api/configuracion', { headers: authHeaders() })
+      .then(res => res.json())
+      .then(data => {
+        const byKey = Object.fromEntries((Array.isArray(data) ? data : []).map((item: any) => [item.clave, item.valor]));
+        const lat = toNumber(byKey.map_default_lat);
+        const lng = toNumber(byKey.map_default_lng);
+        const zoom = toNumber(byKey.map_default_zoom);
+        if (lat !== null && lng !== null) {
+          setMapDefaults({ center: [lat, lng], zoom: zoom !== null ? Math.min(19, Math.max(3, zoom)) : 13 });
+        }
+      })
+      .catch(() => undefined);
+
     const fetchTracking = () => {
-      fetch('/api/tracking/latest')
+      fetch('/api/tracking/latest', { headers: authHeaders() })
         .then(res => res.json())
         .then(data => setTracking(data))
         .catch(console.error);
     };
 
     const fetchPedidos = () => {
-      fetch('/api/pedidos')
+      fetch('/api/pedidos', { headers: authHeaders() })
         .then(res => res.json())
         .then(data => {
           // Filter pedidos a domicilio (or 'puerta')
-          const aDomicilio = data.filter((p: any) => p.modalidad_retiro === 'domicilio' || p.modalidad_entrega === 'domicilio' || p.modalidad_retiro === 'puerta' || p.modalidad_entrega === 'puerta');
+          const aDomicilio = (Array.isArray(data) ? data : []).filter((p: any) => p.modalidad_retiro === 'domicilio' || p.modalidad_entrega === 'domicilio' || p.modalidad_retiro === 'puerta' || p.modalidad_entrega === 'puerta');
           setPedidosDomicilio(aDomicilio);
         })
         .catch(console.error);
     };
 
     const fetchViajes = () => {
-      fetch('/api/viajes')
+      fetch('/api/viajes', { headers: authHeaders() })
         .then(res => res.json())
         .then(data => {
           // Filter 'en_ruta' and 'reparto_local'
-          const activos = data.filter((v: any) => v.estado === 'en_ruta' && v.tipo_viaje === 'reparto_local');
+          const activos = (Array.isArray(data) ? data : []).filter((v: any) => ['en_ruta', 'EN_CURSO'].includes(String(v.estado)) && String(v.tipo_viaje || '').toUpperCase() === 'REPARTO_LOCAL');
           setViajesActivos(activos);
         })
         .catch(console.error);
@@ -71,11 +96,19 @@ export default function Mapa() {
     fetchPedidos();
     fetchViajes();
     
+    const disconnect = connectBackofficeRealtime(message => {
+      const event = message.event || message.type || '';
+      if (event === 'monitor.driver.location.updated') fetchTracking();
+      if (event.startsWith('monitor.viaje') || event.startsWith('monitor.reparto')) fetchViajes();
+    });
     const interval = setInterval(() => {
       fetchTracking();
-      fetchViajes(); // Keep deliveries list updated too
-    }, 10000);
-    return () => clearInterval(interval);
+      fetchViajes();
+    }, 30000);
+    return () => {
+      clearInterval(interval);
+      disconnect();
+    };
   }, []);
 
   // Helper to generate deterministic lat/lng based on ID for demo purposes (Since we don't have real coordinates in DB)
@@ -139,7 +172,7 @@ export default function Mapa() {
 
         {/* Mapa */}
         <div style={{ flex: 1, borderRadius: '0.5rem', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-          <MapContainer center={[-25.2865, -57.6363]} zoom={13} style={{ height: '100%', width: '100%' }}>
+          <MapContainer center={mapDefaults.center} zoom={mapDefaults.zoom} style={{ height: '100%', width: '100%' }} key={`${mapDefaults.center[0]}-${mapDefaults.center[1]}-${mapDefaults.zoom}`}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

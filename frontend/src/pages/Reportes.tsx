@@ -1,24 +1,150 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BarChart2, Download, Filter } from 'lucide-react';
+
+function money(value: number) {
+  return `Gs. ${Number(value || 0).toLocaleString()}`;
+}
+
+function amount(row: any, keys: string[]) {
+  for (const key of keys) {
+    const value = Number(row?.[key] || 0);
+    if (value) return value;
+  }
+  return 0;
+}
+
+function margin(ingresos: number, gastos: number) {
+  return ingresos ? `${(((ingresos - gastos) / ingresos) * 100).toFixed(1)}%` : '0.0%';
+}
 
 export default function Reportes() {
   const [activeTab, setActiveTab] = useState('chofer');
+  const [periodo, setPeriodo] = useState('mes');
+  const [sucursalId, setSucursalId] = useState('todas');
+  const [viajes, setViajes] = useState<any[]>([]);
+  const [pedidos, setPedidos] = useState<any[]>([]);
+  const [gastos, setGastos] = useState<any[]>([]);
+  const [mantenimientos, setMantenimientos] = useState<any[]>([]);
+  const [cuentas, setCuentas] = useState<any[]>([]);
+  const [sucursales, setSucursales] = useState<any[]>([]);
+  const [resumen, setResumen] = useState({ total_ingresos: 0, total_egresos: 0, rentabilidad: 0 });
 
-  // Datos simulados
-  const rentabilidadChofer = [
-    { nombre: 'Luis Díaz', viajes: 15, ingresos: 12500000, gastos: 4200000, margen: '66.4%' },
-    { nombre: 'Carlos R.', viajes: 10, ingresos: 8300000, gastos: 3100000, margen: '62.6%' }
-  ];
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/viajes').then(res => res.json()).catch(() => []),
+      fetch('/api/pedidos').then(res => res.json()).catch(() => []),
+      fetch('/api/caja/gastos').then(res => res.json()).catch(() => []),
+      fetch('/api/gestion/mantenimientos').then(res => res.json()).catch(() => []),
+      fetch('/api/cuentas-corrientes').then(res => res.json()).catch(() => []),
+      fetch('/api/sucursales').then(res => res.json()).catch(() => []),
+      fetch('/api/reportes/rentabilidad').then(res => res.json()).catch(() => ({}))
+    ]).then(([viajesData, pedidosData, gastosData, mantenimientosData, cuentasData, sucursalesData, resumenData]) => {
+      setViajes(Array.isArray(viajesData) ? viajesData : []);
+      setPedidos(Array.isArray(pedidosData) ? pedidosData : []);
+      setGastos(Array.isArray(gastosData) ? gastosData : []);
+      setMantenimientos(Array.isArray(mantenimientosData) ? mantenimientosData : []);
+      setCuentas(Array.isArray(cuentasData) ? cuentasData : []);
+      setSucursales(Array.isArray(sucursalesData) ? sucursalesData : []);
+      setResumen({
+        total_ingresos: Number(resumenData.total_ingresos || 0),
+        total_egresos: Number(resumenData.total_egresos || 0),
+        rentabilidad: Number(resumenData.rentabilidad || 0)
+      });
+    });
+  }, []);
 
-  const rentabilidadVehiculo = [
-    { chapa: 'AAA 111', marca: 'Toyota', km: 2450, ingresos: 15000000, gastos: 5500000, costoKm: 2244, margen: '63.3%' },
-    { chapa: 'BBB 222', marca: 'Mercedes', km: 3100, ingresos: 22000000, gastos: 8800000, costoKm: 2838, margen: '60.0%' }
-  ];
+  const filteredViajes = useMemo(() => {
+    if (sucursalId === 'todas') return viajes;
+    return viajes.filter(viaje => String(viaje.sucursal_origen_id) === sucursalId || String(viaje.sucursal_destino_id) === sucursalId);
+  }, [viajes, sucursalId]);
 
-  const agingReport = [
-    { cliente: 'Supermercados Stock', total: 4500000, alDia: 4500000, v30: 0, v60: 0, v90: 0 },
-    { cliente: 'Farmacenter SA', total: 6200000, alDia: 3200000, v30: 2000000, v60: 1000000, v90: 0 }
-  ];
+  const filteredPedidos = useMemo(() => {
+    if (sucursalId === 'todas') return pedidos;
+    return pedidos.filter(pedido => String(pedido.sucursal_origen_id) === sucursalId || String(pedido.sucursal_destino_id) === sucursalId);
+  }, [pedidos, sucursalId]);
+
+  const rentabilidadChofer = useMemo(() => {
+    const rows = new Map<string, any>();
+    for (const viaje of filteredViajes) {
+      const key = String(viaje.chofer_id || 'sin-chofer');
+      const current = rows.get(key) || {
+        nombre: viaje.chofer_nombre || 'Sin chofer asignado',
+        viajes: 0,
+        ingresos: 0,
+        gastos: 0
+      };
+      current.viajes += String(viaje.estado || '').toLowerCase() === 'finalizado' ? 1 : 0;
+      current.gastos += Number(viaje.costo_estimado || 0);
+      rows.set(key, current);
+    }
+
+    for (const pedido of filteredPedidos) {
+      const viaje = filteredViajes.find(item => Number(item.id) === Number(pedido.viaje_id));
+      if (!viaje) continue;
+      const key = String(viaje.chofer_id || 'sin-chofer');
+      const current = rows.get(key);
+      if (current) current.ingresos += amount(pedido, ['precio', 'total', 'monto']);
+    }
+
+    for (const gasto of gastos) {
+      const key = String(gasto.chofer_id || 'sin-chofer');
+      const current = rows.get(key);
+      if (current) current.gastos += Number(gasto.monto || 0);
+    }
+
+    return [...rows.values()].map(row => ({ ...row, margen: margin(row.ingresos, row.gastos) }));
+  }, [filteredViajes, filteredPedidos, gastos]);
+
+  const rentabilidadVehiculo = useMemo(() => {
+    const rows = new Map<string, any>();
+    for (const viaje of filteredViajes) {
+      const key = String(viaje.vehiculo_id || 'sin-vehiculo');
+      const current = rows.get(key) || {
+        vehiculo: viaje.vehiculo_chapa || 'Sin vehiculo asignado',
+        marca: viaje.vehiculo_marca || '',
+        km: Number(viaje.km_recorridos || viaje.distancia_km || 0),
+        ingresos: 0,
+        gastos: 0
+      };
+      current.gastos += Number(viaje.costo_estimado || 0);
+      rows.set(key, current);
+    }
+
+    for (const pedido of filteredPedidos) {
+      const viaje = filteredViajes.find(item => Number(item.id) === Number(pedido.viaje_id));
+      if (!viaje) continue;
+      const current = rows.get(String(viaje.vehiculo_id || 'sin-vehiculo'));
+      if (current) current.ingresos += amount(pedido, ['precio', 'total', 'monto']);
+    }
+
+    for (const mantenimiento of mantenimientos) {
+      const current = rows.get(String(mantenimiento.vehiculo_id || 'sin-vehiculo'));
+      if (current) current.gastos += amount(mantenimiento, ['costo', 'monto']);
+    }
+
+    return [...rows.values()].map(row => ({
+      ...row,
+      costoKm: row.km ? Math.round(row.gastos / row.km) : 0,
+      margen: margin(row.ingresos, row.gastos)
+    }));
+  }, [filteredViajes, filteredPedidos, mantenimientos]);
+
+  const agingReport = useMemo(() => {
+    return cuentas
+      .filter(cuenta => Number(cuenta.saldo_deudor || 0) > 0)
+      .map(cuenta => ({
+        cliente: cuenta.nombre,
+        total: Number(cuenta.saldo_deudor || 0),
+        alDia: Number(cuenta.saldo_deudor || 0),
+        v30: 0,
+        v60: 0,
+        v90: 0
+      }));
+  }, [cuentas]);
+
+  const ingresos = resumen.total_ingresos;
+  const egresos = resumen.total_egresos;
+  const flujo = resumen.rentabilidad;
 
   return (
     <div>
@@ -29,34 +155,35 @@ export default function Reportes() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem' }}>
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem', flexWrap: 'wrap' }}>
         <button className={`btn ${activeTab === 'chofer' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('chofer')}>
           Rentabilidad x Chofer
         </button>
         <button className={`btn ${activeTab === 'vehiculo' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('vehiculo')}>
-          Rentabilidad x Vehículo
+          Rentabilidad x Vehiculo
         </button>
         <button className={`btn ${activeTab === 'general' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('general')}>
-          Reporte General (P&L)
+          Reporte General P&L
         </button>
         <button className={`btn ${activeTab === 'morosidad' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('morosidad')}>
-          Morosidad (Aging)
+          Morosidad Aging
         </button>
       </div>
 
-      <div style={{ background: 'white', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', border: '1px solid #e5e7eb', alignItems: 'center' }}>
+      <div style={{ background: 'white', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', border: '1px solid #e5e7eb', alignItems: 'center', flexWrap: 'wrap' }}>
         <Filter size={20} className="text-gray-500" />
-        <select className="form-control" style={{ width: 'auto' }}>
-          <option>Mes Actual (Abril 2026)</option>
-          <option>Mes Anterior</option>
-          <option>YTD (Año a la fecha)</option>
-          <option>Rango Personalizado...</option>
+        <select className="form-control" style={{ width: 'auto' }} value={periodo} onChange={e => setPeriodo(e.target.value)}>
+          <option value="mes">Mes actual</option>
+          <option value="anterior">Mes anterior</option>
+          <option value="ytd">YTD</option>
         </select>
-        <select className="form-control" style={{ width: 'auto' }}>
-          <option>Todas las Sucursales</option>
-          <option>Asunción Central</option>
-          <option>Ciudad del Este</option>
+        <select className="form-control" style={{ width: 'auto' }} value={sucursalId} onChange={e => setSucursalId(e.target.value)}>
+          <option value="todas">Todas las sucursales</option>
+          {sucursales.map(sucursal => (
+            <option key={sucursal.id} value={sucursal.id}>{sucursal.nombre}</option>
+          ))}
         </select>
+        <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>Periodo: {periodo.toUpperCase()}</span>
       </div>
 
       {activeTab === 'chofer' && (
@@ -66,21 +193,24 @@ export default function Reportes() {
               <tr>
                 <th>Chofer</th>
                 <th>Viajes Completados</th>
-                <th>Fletes Generados (Ingresos)</th>
-                <th>Gastos Operativos (Viáticos)</th>
+                <th>Fletes Generados</th>
+                <th>Gastos Operativos</th>
                 <th>Margen Bruto</th>
               </tr>
             </thead>
             <tbody>
-              {rentabilidadChofer.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 'bold' }}>{r.nombre}</td>
-                  <td>{r.viajes}</td>
-                  <td style={{ color: '#16a34a' }}>Gs. {r.ingresos.toLocaleString()}</td>
-                  <td style={{ color: '#dc2626' }}>Gs. {r.gastos.toLocaleString()}</td>
-                  <td style={{ fontWeight: 'bold' }}>{r.margen}</td>
+              {rentabilidadChofer.map((row, index) => (
+                <tr key={index}>
+                  <td style={{ fontWeight: 'bold' }}>{row.nombre}</td>
+                  <td>{row.viajes}</td>
+                  <td style={{ color: '#16a34a' }}>{money(row.ingresos)}</td>
+                  <td style={{ color: '#dc2626' }}>{money(row.gastos)}</td>
+                  <td style={{ fontWeight: 'bold' }}>{row.margen}</td>
                 </tr>
               ))}
+              {rentabilidadChofer.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: '#6b7280' }}>No hay viajes para reportar en esta empresa.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -91,25 +221,28 @@ export default function Reportes() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Vehículo</th>
+                <th>Vehiculo</th>
                 <th>KM Recorridos</th>
-                <th>Fletes Generados (Ingresos)</th>
-                <th>Gastos (Comb. + Mantenimiento)</th>
+                <th>Fletes Generados</th>
+                <th>Gastos</th>
                 <th>Costo x KM</th>
                 <th>Margen Bruto</th>
               </tr>
             </thead>
             <tbody>
-              {rentabilidadVehiculo.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 'bold' }}>{r.chapa} - {r.marca}</td>
-                  <td>{r.km.toLocaleString()} km</td>
-                  <td style={{ color: '#16a34a' }}>Gs. {r.ingresos.toLocaleString()}</td>
-                  <td style={{ color: '#dc2626' }}>Gs. {r.gastos.toLocaleString()}</td>
-                  <td>Gs. {r.costoKm}</td>
-                  <td style={{ fontWeight: 'bold' }}>{r.margen}</td>
+              {rentabilidadVehiculo.map((row, index) => (
+                <tr key={index}>
+                  <td style={{ fontWeight: 'bold' }}>{row.vehiculo}{row.marca ? ` - ${row.marca}` : ''}</td>
+                  <td>{Number(row.km || 0).toLocaleString()} km</td>
+                  <td style={{ color: '#16a34a' }}>{money(row.ingresos)}</td>
+                  <td style={{ color: '#dc2626' }}>{money(row.gastos)}</td>
+                  <td>{money(row.costoKm)}</td>
+                  <td style={{ fontWeight: 'bold' }}>{row.margen}</td>
                 </tr>
               ))}
+              {rentabilidadVehiculo.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No hay vehiculos con actividad para reportar.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -118,16 +251,16 @@ export default function Reportes() {
       {activeTab === 'general' && (
         <div style={{ maxWidth: '600px', margin: '0 auto' }}>
           <div className="stat-card" style={{ marginBottom: '1rem', textAlign: 'center' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Ingresos Totales (Facturación)</h3>
-            <p className="value text-green-600">Gs. 45,000,000</p>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Ingresos Totales</h3>
+            <p className="value text-green-600">{money(ingresos)}</p>
           </div>
           <div className="stat-card" style={{ marginBottom: '1rem', textAlign: 'center' }}>
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Gastos Totales (Operativos + Fijos)</h3>
-            <p className="value text-red-600">Gs. 18,500,000</p>
+            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Gastos Totales</h3>
+            <p className="value text-red-600">{money(egresos)}</p>
           </div>
           <div className="stat-card" style={{ background: '#eff6ff', borderColor: '#bfdbfe', textAlign: 'center' }}>
             <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Flujo de Caja Neto</h3>
-            <p className="value text-blue-600">Gs. 26,500,000</p>
+            <p className="value text-blue-600">{money(flujo)}</p>
           </div>
         </div>
       )}
@@ -139,23 +272,26 @@ export default function Reportes() {
               <tr>
                 <th>Cliente</th>
                 <th>Saldo Total a Cobrar</th>
-                <th>Al Día</th>
-                <th>Vencido a 30 días</th>
-                <th>Vencido a 60 días</th>
-                <th>Vencido a 90+ días</th>
+                <th>Al Dia</th>
+                <th>Vencido a 30 dias</th>
+                <th>Vencido a 60 dias</th>
+                <th>Vencido a 90+ dias</th>
               </tr>
             </thead>
             <tbody>
-              {agingReport.map((a, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 'bold' }}>{a.cliente}</td>
-                  <td style={{ fontWeight: 'bold' }}>Gs. {a.total.toLocaleString()}</td>
-                  <td style={{ color: '#16a34a' }}>Gs. {a.alDia.toLocaleString()}</td>
-                  <td style={{ color: a.v30 > 0 ? '#ca8a04' : '#6b7280' }}>Gs. {a.v30.toLocaleString()}</td>
-                  <td style={{ color: a.v60 > 0 ? '#ea580c' : '#6b7280' }}>Gs. {a.v60.toLocaleString()}</td>
-                  <td style={{ color: a.v90 > 0 ? '#dc2626' : '#6b7280', fontWeight: a.v90 > 0 ? 'bold' : 'normal' }}>Gs. {a.v90.toLocaleString()}</td>
+              {agingReport.map((row, index) => (
+                <tr key={index}>
+                  <td style={{ fontWeight: 'bold' }}>{row.cliente}</td>
+                  <td style={{ fontWeight: 'bold' }}>{money(row.total)}</td>
+                  <td style={{ color: '#16a34a' }}>{money(row.alDia)}</td>
+                  <td style={{ color: row.v30 > 0 ? '#ca8a04' : '#6b7280' }}>{money(row.v30)}</td>
+                  <td style={{ color: row.v60 > 0 ? '#ea580c' : '#6b7280' }}>{money(row.v60)}</td>
+                  <td style={{ color: row.v90 > 0 ? '#dc2626' : '#6b7280', fontWeight: row.v90 > 0 ? 'bold' : 'normal' }}>{money(row.v90)}</td>
                 </tr>
               ))}
+              {agingReport.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#6b7280' }}>No hay saldos pendientes para esta empresa.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

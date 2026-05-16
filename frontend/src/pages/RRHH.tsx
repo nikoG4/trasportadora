@@ -180,7 +180,14 @@ function money(value: number | string | null | undefined) {
 }
 
 async function api(path: string, options?: RequestInit) {
-  const response = await fetch(path, options);
+  const token = localStorage.getItem('adminToken');
+  const response = await fetch(path, {
+    ...(options || {}),
+    headers: {
+      ...(options?.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || 'No se pudo completar la operacion');
@@ -218,12 +225,12 @@ export default function RRHH() {
     ])
       .then(([resumenData, empleadosData, sucursalesData, asistenciasData, licenciasData, nominaData, capacitacionesData]) => {
         setResumen(resumenData);
-        setEmpleados(empleadosData);
-        setSucursales(sucursalesData);
-        setAsistencias(asistenciasData);
-        setLicencias(licenciasData);
-        setNomina(nominaData);
-        setCapacitaciones(capacitacionesData);
+        setEmpleados(Array.isArray(empleadosData) ? empleadosData : []);
+        setSucursales(Array.isArray(sucursalesData) ? sucursalesData : []);
+        setAsistencias(Array.isArray(asistenciasData) ? asistenciasData : []);
+        setLicencias(Array.isArray(licenciasData) ? licenciasData : []);
+        setNomina(Array.isArray(nominaData) ? nominaData : []);
+        setCapacitaciones(Array.isArray(capacitacionesData) ? capacitacionesData : []);
       })
       .catch(error => setFeedback(error.message));
   };
@@ -495,6 +502,13 @@ export default function RRHH() {
                 </tr>
               </thead>
               <tbody>
+                {empleados.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', color: '#6b7280', padding: '1rem' }}>
+                      Sin empleados cargados para este tenant.
+                    </td>
+                  </tr>
+                )}
                 {empleados.map(empleado => (
                   <tr key={empleado.id}>
                     <td>

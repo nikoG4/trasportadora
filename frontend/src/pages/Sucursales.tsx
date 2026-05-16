@@ -1,5 +1,36 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, X, Edit, Trash } from 'lucide-react';
+import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import { Plus, X, Edit, Trash, MapPin } from 'lucide-react';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+function toNumber(value: any) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatCoord(value: any) {
+  const parsed = toNumber(value);
+  if (parsed === null) return 'Sin coordenadas';
+  return parsed.toFixed(6);
+}
+
+function BranchMapPicker({ onPick }: { onPick: (latitud: number, longitud: number) => void }) {
+  useMapEvents({
+    click(event) {
+      onPick(Number(event.latlng.lat.toFixed(6)), Number(event.latlng.lng.toFixed(6)));
+    }
+  });
+  return null;
+}
 
 export default function Sucursales() {
   const [sucursales, setSucursales] = useState<any[]>([]);
@@ -15,6 +46,10 @@ export default function Sucursales() {
     longitud: ''
   });
   const [mapsLink, setMapsLink] = useState('');
+  const [defaultMap, setDefaultMap] = useState({ center: [-25.5167, -54.6167] as [number, number], zoom: 13 });
+  const selectedLat = toNumber(formData.latitud);
+  const selectedLng = toNumber(formData.longitud);
+  const mapCenter: [number, number] = selectedLat !== null && selectedLng !== null ? [selectedLat, selectedLng] : defaultMap.center;
 
   useEffect(() => {
     loadSucursales();
@@ -25,6 +60,16 @@ export default function Sucursales() {
       .then(res => res.json())
       .then(data => setSucursales(data))
       .catch(console.error);
+    fetch('/api/configuracion')
+      .then(res => res.json())
+      .then(data => {
+        const byKey = Object.fromEntries((Array.isArray(data) ? data : []).map((item: any) => [item.clave, item.valor]));
+        const lat = toNumber(byKey.map_default_lat);
+        const lng = toNumber(byKey.map_default_lng);
+        const zoom = toNumber(byKey.map_default_zoom);
+        if (lat !== null && lng !== null) setDefaultMap({ center: [lat, lng], zoom: zoom !== null ? Math.min(19, Math.max(3, zoom)) : 13 });
+      })
+      .catch(() => undefined);
   };
 
   const handleParseMapsLink = async () => {
@@ -36,7 +81,7 @@ export default function Sucursales() {
         body: JSON.stringify({ link: mapsLink })
       });
       const data = await res.json();
-      if (data.latitud && data.longitud) {
+      if (data.latitud !== undefined && data.longitud !== undefined) {
         setFormData(prev => ({ ...prev, latitud: data.latitud.toString(), longitud: data.longitud.toString() }));
       }
     } catch (e) {
@@ -55,13 +100,15 @@ export default function Sucursales() {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData)
-    }).then(() => {
+    }).then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudo guardar la sucursal');
       setShowModal(false);
       setEditingId(null);
       setFormData({ nombre: '', codigo: '', direccion: '', telefono: '', ciudad: '', latitud: '', longitud: '' });
       setMapsLink('');
       loadSucursales();
-    });
+    }).catch(err => alert(err.message || 'No se pudo guardar la sucursal'));
   };
 
   const handleEdit = (sucursal: any) => {
@@ -72,8 +119,8 @@ export default function Sucursales() {
       direccion: sucursal.direccion || '',
       telefono: sucursal.telefono || '',
       ciudad: sucursal.ciudad || '',
-      latitud: sucursal.latitud || '',
-      longitud: sucursal.longitud || ''
+      latitud: sucursal.latitud ?? '',
+      longitud: sucursal.longitud ?? ''
     });
     setMapsLink('');
     setShowModal(true);
@@ -127,8 +174,8 @@ export default function Sucursales() {
                 <td>{s.ciudad}</td>
                 <td>{s.direccion}</td>
                 <td>{s.telefono}</td>
-                <td>{s.latitud}</td>
-                <td>{s.longitud}</td>
+                <td>{formatCoord(s.latitud)}</td>
+                <td>{formatCoord(s.longitud)}</td>
                 <td>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button className="btn btn-outline" style={{ padding: '0.25rem' }} onClick={() => handleEdit(s)}>
@@ -194,6 +241,27 @@ export default function Sucursales() {
               <div className="form-group">
                 <label>Longitud</label>
                 <input name="longitud" value={formData.longitud} onChange={e => setFormData({ ...formData, longitud: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Ubicacion en mapa</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#4b5563', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <MapPin size={16} />
+                  Haga clic en el mapa para marcar la sucursal.
+                </div>
+                <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: '0.5rem', overflow: 'hidden' }}>
+                  <MapContainer center={mapCenter} zoom={selectedLat !== null && selectedLng !== null ? 16 : defaultMap.zoom} style={{ height: '100%', width: '100%' }} key={`${mapCenter[0]}-${mapCenter[1]}-${defaultMap.zoom}-${editingId || 'new'}`}>
+                    <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <BranchMapPicker onPick={(latitud, longitud) => setFormData(prev => ({ ...prev, latitud: String(latitud), longitud: String(longitud) }))} />
+                    {selectedLat !== null && selectedLng !== null && (
+                      <Marker position={[selectedLat, selectedLng]}>
+                        <Popup>
+                          {formData.nombre || 'Sucursal'}<br />
+                          {formatCoord(selectedLat)}, {formatCoord(selectedLng)}
+                        </Popup>
+                      </Marker>
+                    )}
+                  </MapContainer>
+                </div>
               </div>
               <button type="submit" className="btn btn-primary" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}>Guardar</button>
             </form>

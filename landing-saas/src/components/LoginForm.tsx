@@ -90,7 +90,11 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
         throw new Error(data.error || 'Error al iniciar sesión');
       }
 
-      // Store credentials in localStorage for the main app
+      // Store credentials using the same keys as the backoffice app.
+      localStorage.setItem('adminToken', data.token);
+      localStorage.setItem('refreshToken', data.refreshToken);
+      localStorage.setItem('adminRole', data.role);
+      if (data.tenant?.nombre) localStorage.setItem('tenantName', data.tenant.nombre);
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('auth_refresh_token', data.refreshToken);
       localStorage.setItem('auth_role', data.role);

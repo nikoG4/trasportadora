@@ -43,10 +43,6 @@ Antes de correr las pruebas, asegurate de que `npm run dev:all` este activo y qu
 
 ## Documentacion
 
-Toda la documentacion vive en `/docs`.
+La documentacion fue unificada en un solo archivo:
 
-- [Indice de documentacion](docs/README.md)
-- [Estado actual del sistema](docs/ESTADO_ACTUAL_SISTEMA.md)
-- [Arquitectura](docs/ARQUITECTURA.md)
-- [Despliegue en GCloud](docs/DESPLIEGUE_GCLOUD.md)
-- [Documentacion funcional completa](docs/documentacion_sistema_transportadora_paraguay.md)
+- [Documentacion completa](docs/README.md)

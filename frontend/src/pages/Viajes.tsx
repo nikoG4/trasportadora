@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Plus, X, Printer } from 'lucide-react';
+import { Ban, CheckCircle, Plus, X, Printer } from 'lucide-react';
+import { connectBackofficeRealtime } from '../realtime';
+
+function authHeaders(extra?: Record<string, string>) {
+  const token = localStorage.getItem('adminToken');
+  return {
+    ...(extra || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+}
 
 export default function Viajes() {
   const [viajes, setViajes] = useState<any[]>([]);
@@ -24,16 +33,23 @@ export default function Viajes() {
 
   useEffect(() => {
     loadViajes();
-    fetch('/api/choferes').then(res => res.json()).then(data => setChoferes(data.filter((c:any) => c.estado === 'activo')));
-    fetch('/api/vehiculos').then(res => res.json()).then(data => setVehiculos(data.filter((v:any) => v.estado === 'disponible')));
-    fetch('/api/pedidos').then(res => res.json()).then(data => setPedidos(data.filter((p:any) => ['pendiente_planificacion', 'registrado', 'borrador'].includes(p.estado))));
-    fetch('/api/sucursales').then(res => res.json()).then(setSucursales);
+    fetch('/api/choferes', { headers: authHeaders() }).then(res => res.json()).then(data => setChoferes((Array.isArray(data) ? data : []).filter((c:any) => c.estado === 'activo')));
+    fetch('/api/vehiculos', { headers: authHeaders() }).then(res => res.json()).then(data => setVehiculos((Array.isArray(data) ? data : []).filter((v:any) => v.estado === 'disponible')));
+    fetch('/api/pedidos', { headers: authHeaders() }).then(res => res.json()).then(data => setPedidos((Array.isArray(data) ? data : []).filter((p:any) => ['pendiente_planificacion', 'registrado', 'borrador'].includes(p.estado))));
+    fetch('/api/sucursales', { headers: authHeaders() }).then(res => res.json()).then(data => setSucursales(Array.isArray(data) ? data : []));
+    const disconnect = connectBackofficeRealtime(message => {
+      const event = message.event || message.type || '';
+      if (event.startsWith('monitor.viaje') || event === 'monitor.driver.location.updated') {
+        loadViajes();
+      }
+    });
+    return disconnect;
   }, []);
 
   const loadViajes = () => {
-    fetch('/api/viajes')
+    fetch('/api/viajes', { headers: authHeaders() })
       .then(res => res.json())
-      .then(data => setViajes(data))
+      .then(data => setViajes(Array.isArray(data) ? data : []))
       .catch(console.error);
   };
 
@@ -58,10 +74,14 @@ export default function Viajes() {
       return;
     }
     try {
+      const body = {
+        ...formData,
+        sucursal_destino_id: formData.sucursal_destino_id || (formData.tipo_viaje === 'reparto_local' ? formData.sucursal_origen_id : null)
+      };
       const res = await fetch('/api/viajes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(body)
       });
       if (!res.ok) {
         const errorData = await res.json();
@@ -162,6 +182,25 @@ export default function Viajes() {
     }, 250);
   };
 
+  const cerrarViaje = async (viaje: any, estado: 'finalizado' | 'con_incidencia' | 'cancelado') => {
+    const label = estado === 'cancelado' ? 'cancelar' : estado === 'con_incidencia' ? 'cerrar con incidencia' : 'finalizar';
+    if (!confirm(`Confirma ${label} el viaje #${viaje.id}? El vehiculo quedara disponible.`)) return;
+    const motivo = estado !== 'finalizado' ? prompt('Motivo u observaciones (opcional):') || '' : '';
+    try {
+      const res = await fetch(`/api/viajes/${viaje.id}/cerrar`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ estado, motivo })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudo cerrar el viaje');
+      loadViajes();
+      fetch('/api/vehiculos').then(res => res.json()).then(data => setVehiculos(data.filter((v:any) => v.estado === 'disponible')));
+    } catch (err: any) {
+      alert(err.message || 'No se pudo cerrar el viaje');
+    }
+  };
+
   return (
     <div>
       <iframe ref={printFrameRef} style={{ display: 'none' }} title="print-manifest-frame"></iframe>
@@ -203,6 +242,19 @@ export default function Viajes() {
                   <button className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} onClick={() => handlePrintManifest(v)}>
                     <Printer size={16} className="inline mr-1" /> Imprimir Manifiesto
                   </button>
+                  {String(v.tipo_viaje || '').toUpperCase() !== 'REPARTO_LOCAL' && !['finalizado', 'con_incidencia', 'cancelado'].includes(String(v.estado || '').toLowerCase()) && (
+                    <>
+                      <button className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: '0.35rem' }} onClick={() => cerrarViaje(v, 'finalizado')}>
+                        <CheckCircle size={16} className="inline mr-1" /> Finalizar
+                      </button>
+                      <button className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: '0.35rem' }} onClick={() => cerrarViaje(v, 'con_incidencia')}>
+                        <CheckCircle size={16} className="inline mr-1" /> Cerrar c/ incidencia
+                      </button>
+                      <button className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', marginLeft: '0.35rem', color: '#b91c1c', borderColor: '#ef4444' }} onClick={() => cerrarViaje(v, 'cancelado')}>
+                        <Ban size={16} className="inline mr-1" /> Cancelar
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}
@@ -235,10 +287,11 @@ export default function Viajes() {
                 </div>
                 <div className="form-group">
                   <label>Sucursal Destino</label>
-                  <select required value={formData.sucursal_destino_id} onChange={e => setFormData({...formData, sucursal_destino_id: e.target.value})}>
+                  <select required={formData.tipo_viaje !== 'reparto_local'} value={formData.sucursal_destino_id} onChange={e => setFormData({...formData, sucursal_destino_id: e.target.value})}>
                     <option value="">Seleccione destino</option>
                     {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                   </select>
+                  {formData.tipo_viaje === 'reparto_local' ? <small style={{ color: '#6b7280' }}>Reparto local: la sucursal destino se asigna igual a la sucursal de origen.</small> : null}
                 </div>
                 <div className="form-group">
                   <label>Chofer</label>

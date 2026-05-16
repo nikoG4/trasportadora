@@ -54,14 +54,16 @@ export default function Pedidos() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    
-    if (formData.sucursal_origen_id === formData.sucursal_destino_id) {
-      alert('La sucursal de origen y destino no pueden ser la misma.');
+    const destinoRequerido = formData.modalidad_entrega === 'sucursal';
+
+    if (destinoRequerido && !formData.sucursal_destino_id) {
+      alert('Seleccione una sucursal de destino para entregas en sucursal.');
       return;
     }
 
     const payload = {
       ...formData,
+      sucursal_destino_id: formData.sucursal_destino_id || null,
       origen: sucursales.find(s => s.id.toString() === formData.sucursal_origen_id)?.nombre || 'S/N',
       destino: sucursales.find(s => s.id.toString() === formData.sucursal_destino_id)?.nombre || 'S/N',
       fecha_prevista: new Date().toISOString().split('T')[0],
@@ -392,10 +394,11 @@ export default function Pedidos() {
                   </div>
                   <div className="form-group">
                     <label>Sucursal Destino</label>
-                    <select required name="sucursal_destino_id" value={formData.sucursal_destino_id} onChange={handleChange}>
+                    <select required={formData.modalidad_entrega === 'sucursal'} name="sucursal_destino_id" value={formData.sucursal_destino_id} onChange={handleChange}>
                       <option value="">Seleccione sucursal</option>
                       {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
                     </select>
+                    {formData.modalidad_entrega !== 'sucursal' ? <small style={{ color: '#6b7280' }}>Entrega a domicilio: no es necesario seleccionar sucursal destino.</small> : null}
                   </div>
                   <div className="form-group">
                     <label>Modalidad de Retiro</label>
