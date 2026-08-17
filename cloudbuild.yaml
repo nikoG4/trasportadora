@@ -33,7 +33,7 @@ steps:
       - --min-instances
       - "0"
       - --max-instances
-      - "2"
+      - "5"
       - --concurrency
       - "80"
       - --set-env-vars
