@@ -1302,8 +1302,8 @@ app.get('/api/auditoria', authenticate, requirePermission('configuracion.manage'
     FROM audit_logs a
     LEFT JOIN users u ON u.id = a.user_id AND u.tenant_id = a.tenant_id
     WHERE a.tenant_id = ?
-      AND (? IS NULL OR a.accion LIKE ?)
-      AND (? IS NULL OR a.entidad = ?)
+      AND (CAST(? AS TEXT) IS NULL OR a.accion LIKE ?)
+      AND (CAST(? AS TEXT) IS NULL OR a.entidad = ?)
     ORDER BY datetime(a.fecha) DESC
     LIMIT 300
   `).all(tenantId, accion, accion, entidad, entidad);
@@ -2043,7 +2043,7 @@ app.get('/api/alertas', authenticate, (req, res) => {
   res.json(db.prepare(`
     SELECT *
     FROM alertas
-    WHERE tenant_id = ? AND (? IS NULL OR estado = ?)
+    WHERE tenant_id = ? AND (CAST(? AS TEXT) IS NULL OR estado = ?)
     ORDER BY CASE severidad WHEN 'critica' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END,
              datetime(fecha_creacion) DESC
     LIMIT 300
