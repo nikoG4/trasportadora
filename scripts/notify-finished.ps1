@@ -1,8 +1,8 @@
 param(
   [string]$Message = "Transportadora: trabajo terminado.",
   [string]$Subject = "Transportadora lista",
-  [string]$EmailTo = "nikoovelarrelag4@gmail.com",
-  [string]$WhatsappTo = "whatsapp:+595972918847"
+  [string]$EmailTo = $env:NOTIFY_EMAIL_TO,
+  [string]$WhatsappTo = $env:NOTIFY_WHATSAPP_TO
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,12 +23,12 @@ function Send-TelegramNotification {
     -ContentType "application/json" `
     -Body ($body | ConvertTo-Json -Compress) | Out-Null
 
-  Write-Host "Telegram enviado a chat $($env:TELEGRAM_CHAT_ID)."
+  Write-Host "Telegram enviado."
   return $true
 }
 
 function Send-EmailNotification {
-  if (-not $env:SMTP_HOST -or -not $env:SMTP_USER -or -not $env:SMTP_PASS) {
+  if (-not $EmailTo -or -not $env:SMTP_HOST -or -not $env:SMTP_USER -or -not $env:SMTP_PASS) {
     return $false
   }
 
@@ -48,12 +48,12 @@ function Send-EmailNotification {
     -Body $Message `
     -Encoding UTF8
 
-  Write-Host "Correo enviado a $EmailTo."
+  Write-Host "Correo enviado."
   return $true
 }
 
 function Send-TwilioWhatsappNotification {
-  if (-not $env:TWILIO_ACCOUNT_SID -or -not $env:TWILIO_AUTH_TOKEN -or -not $env:TWILIO_WHATSAPP_FROM) {
+  if (-not $WhatsappTo -or -not $env:TWILIO_ACCOUNT_SID -or -not $env:TWILIO_AUTH_TOKEN -or -not $env:TWILIO_WHATSAPP_FROM) {
     return $false
   }
 
@@ -73,7 +73,7 @@ function Send-TwilioWhatsappNotification {
     -Headers @{ Authorization = "Basic $basic" } `
     -Body $form | Out-Null
 
-  Write-Host "WhatsApp enviado a $WhatsappTo."
+  Write-Host "WhatsApp enviado."
   return $true
 }
 
@@ -84,9 +84,9 @@ try { $sent = (Send-EmailNotification) -or $sent } catch { Write-Warning "Correo
 try { $sent = (Send-TwilioWhatsappNotification) -or $sent } catch { Write-Warning "WhatsApp fallo: $($_.Exception.Message)" }
 
 if (-not $sent) {
-  Write-Host "No se envio notificacion porque faltan credenciales."
+  Write-Host "No se envio notificacion porque faltan credenciales o destinos."
   Write-Host "Telegram: TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID."
-  Write-Host "Correo: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y opcional SMTP_FROM."
-  Write-Host "WhatsApp Twilio: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_WHATSAPP_FROM."
+  Write-Host "Correo: NOTIFY_EMAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS y opcional SMTP_FROM."
+  Write-Host "WhatsApp Twilio: NOTIFY_WHATSAPP_TO, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN y TWILIO_WHATSAPP_FROM."
   exit 2
 }
