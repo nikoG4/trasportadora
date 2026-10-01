@@ -14,21 +14,25 @@ function Get-RepoRoot {
 
 function Get-ReleaseConfig {
   param([string]$RepoRoot)
+
   $apiUrl = $env:TRANSPORTADORA_API_URL
-  if (-not $apiUrl) { $apiUrl = "https://transportadora-ayr5ylhexa-uc.a.run.app/api" }
+  if (-not $apiUrl) { throw "Define TRANSPORTADORA_API_URL en el entorno." }
+
   $adminUser = $env:TRANSPORTADORA_ADMIN_USER
-  if (-not $adminUser) { $adminUser = "admin" }
+  if (-not $adminUser) { throw "Define TRANSPORTADORA_ADMIN_USER en el entorno." }
+
   $adminPassword = $env:TRANSPORTADORA_ADMIN_PASSWORD
-  if (-not $adminPassword) { $adminPassword = "admin123" }
+  if (-not $adminPassword) { throw "Define TRANSPORTADORA_ADMIN_PASSWORD en el entorno." }
+
   $projectId = $env:GCLOUD_PROJECT_ID
-  if (-not $projectId) { $projectId = "project-c603f2e8-0d5d-451f-ade" }
+  if (-not $projectId) { throw "Define GCLOUD_PROJECT_ID en el entorno." }
+
   $region = $env:GCLOUD_REGION
   if (-not $region) { $region = "us-central1" }
+
   $gcloud = $env:GCLOUD_CMD
-  if (-not $gcloud) {
-    $defaultGcloud = "C:\Users\ll\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
-    $gcloud = if (Test-Path -LiteralPath $defaultGcloud) { $defaultGcloud } else { "gcloud" }
-  }
+  if (-not $gcloud) { $gcloud = "gcloud" }
+
   return @{
     ApiUrl = $apiUrl.TrimEnd("/")
     AdminUser = $adminUser
