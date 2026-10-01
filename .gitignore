@@ -13,12 +13,22 @@ chofer-ota-*.zip
 
 cloudflared.exe
 
+# Local/generated databases
+backend/transportadora.db
 backend/transportadora.db-journal
 backend/transportadora.db-wal
 backend/transportadora.db-shm
+*.sqlite
+*.sqlite3
+
+# Credentials and generated uploads
 backend/firebase-service-account.json
 backend/uploads/
 app-chofer/android/app/google-services.json
+
+# Third-party tools must be installed/downloaded locally, not vendored
+/tools/jadx-*/
+/tools/jadx-*.zip
 
 app-chofer/android/.gradle/
 app-chofer/android/build/
