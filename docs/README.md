@@ -1,10 +1,10 @@
 # Sistema Transportadora Paraguay
 
-Documentacion unica del proyecto. Este archivo reemplaza las guias sueltas anteriores y concentra arquitectura, modulos, desarrollo, despliegue, seguridad y pruebas.
+Documentación única del proyecto. Este archivo reemplaza las guías sueltas anteriores y concentra arquitectura, módulos, desarrollo, despliegue, seguridad y pruebas.
 
 ## Resumen
 
-Sistema SaaS multi-tenant para transportadoras de cargas en Paraguay. Cubre operacion logistica, finanzas, caja, RRHH, flota, choferes, GPS, app movil de choferes, configuracion SaaS y auditoria.
+Sistema SaaS multi-tenant para transportadoras de cargas en Paraguay. Cubre operación logística, finanzas, caja, RRHH, flota, choferes, GPS, app móvil de choferes, configuración SaaS y auditoría.
 
 ## Estructura
 
@@ -15,26 +15,26 @@ trasportadora/
 ├── app-chofer/    App chofer React + Capacitor Android
 ├── landing-saas/  Landing, registro y login SaaS
 ├── e2e-tests/     Pruebas Playwright
-├── tools/tests/   Pruebas estaticas y tenant isolation
+├── tools/tests/   Pruebas estáticas y tenant isolation
 ├── deploy/        Ejemplos y scripts de despliegue
-└── docs/          Esta documentacion
+└── docs/          Esta documentación
 ```
 
 ## Stack
 
-- Backend: Node.js, Express, TypeScript, JWT, bcrypt, SQLite local y capa PostgreSQL/Supabase para produccion.
+- Backend: Node.js, Express, TypeScript, JWT, bcrypt, SQLite local y capa PostgreSQL/Supabase para producción.
 - Frontend: React 19, Vite, TypeScript, React Router, Lucide React, Leaflet.
 - App chofer: React 19, Vite, Capacitor Android, Camera, Geolocation, plugins nativos propios.
 - Infra: Docker, Cloud Build, Cloud Run, Artifact Registry, Google Cloud Storage opcional.
 
-## Modulos
+## Módulos
 
-### Autenticacion y Tenant
+### Autenticación y Tenant
 
 - Login admin y login chofer con JWT y refresh token.
 - Roles: `superadmin_saas`, `admin_empresa`, `operador`, `financiero`, `rrhh`, `despachante`, `chofer`, `cliente_portal`.
 - Cada dato operativo usa `tenant_id`.
-- Los endpoints `/api/*` productivos requieren autenticacion, salvo login, refresh, rutas publicas y actualizaciones publicas de app.
+- Los endpoints `/api/*` productivos requieren autenticación, salvo login, refresh, rutas públicas y actualizaciones públicas de app.
 - `superadmin_saas` puede operar cross-tenant; usuarios de empresa solo ven su tenant.
 
 ### Operaciones
@@ -43,17 +43,17 @@ trasportadora/
 - Viajes
 - Reparto local
 - Monitoreo GPS
-- Gestion integral: proveedores, compras, mantenimientos, incidencias, inventario, tarifarios y contratos
+- Gestión integral: proveedores, compras, mantenimientos, incidencias, inventario, tarifarios y contratos
 
 ### Finanzas y Caja
 
-- Caja del dia
-- Viaticos y rendiciones
+- Caja del día
+- Viáticos y rendiciones
 - Cuentas corrientes
-- Ingresos y facturacion
+- Ingresos y facturación
 - Reportes financieros
 
-### Catalogos y Administracion
+### Catálogos y Administración
 
 - Clientes
 - Flota
@@ -61,7 +61,7 @@ trasportadora/
 - Sucursales
 - RRHH
 - Usuarios y roles
-- Auditoria
+- Auditoría
 - App Chofer OTA
 - SaaS Config
 
@@ -89,7 +89,7 @@ Viajes:
 - `finalizado`
 - `cancelado`
 
-Vehiculos:
+Vehículos:
 
 - `disponible`
 - `en_viaje`
@@ -98,14 +98,14 @@ Vehiculos:
 
 ## API Principal
 
-Autenticacion:
+Autenticación:
 
 - `POST /api/login`
 - `POST /api/auth/refresh`
 - `POST /api/auth/logout`
 - `GET /api/me`
 
-Operacion:
+Operación:
 
 - `GET/POST /api/clientes`
 - `GET/POST /api/choferes`
@@ -129,7 +129,7 @@ Finanzas:
 - `POST /api/facturas`
 - `GET /api/reportes/rentabilidad`
 
-Gestion y administracion:
+Gestión y administración:
 
 - `GET/POST /api/rrhh/*`
 - `GET/POST /api/gestion/*`
@@ -141,7 +141,7 @@ Gestion y administracion:
 
 ## Desarrollo
 
-Instalar dependencias raiz:
+Instalar dependencias raíz:
 
 ```bash
 npm install
@@ -179,7 +179,7 @@ npm run build:all
 
 ## Pruebas
 
-Pruebas estaticas y regresiones de frontend:
+Pruebas estáticas y regresiones de frontend:
 
 ```bash
 npm run test:features
@@ -197,7 +197,7 @@ Pruebas Playwright:
 npm run test:e2e
 ```
 
-La prueba `test:tenant` crea tenants nuevos, valida que una cuenta nueva no vea datos del tenant demo y revisa modulos operativos, finanzas, dashboard, GPS, usuarios, reportes y app chofer.
+La prueba `test:tenant` crea tenants nuevos, valida que una cuenta nueva no vea datos del tenant demo y revisa módulos operativos, finanzas, dashboard, GPS, usuarios, reportes y app chofer.
 
 ## Variables Backend
 
@@ -213,31 +213,26 @@ Variables frecuentes:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `GCS_BUCKET`
 
-Usar `backend/.env.example` y `deploy/env.example` como base.
+Usar `backend/.env.example` y `deploy/env.example` como base. Los ejemplos deben contener solo placeholders o valores ficticios.
 
 ## Base de Datos
 
 - Desarrollo: SQLite en `backend/transportadora.db`.
-- Produccion: la capa PostgreSQL/Supabase esta preparada; completar migracion y validar `DATABASE_URL` antes de operar clientes reales.
+- Producción: la capa PostgreSQL/Supabase está preparada; completar migración y validar `DATABASE_URL` antes de operar clientes reales.
 - Las tablas operativas deben incluir `tenant_id`.
-- Toda consulta list/detail/update/delete debe filtrar por `tenant_id` salvo rutas explicitas de superadmin.
+- Toda consulta list/detail/update/delete debe filtrar por `tenant_id` salvo rutas explícitas de superadmin.
 
-## Despliegue GCloud
+## Despliegue en Google Cloud
 
-Servicio existente:
+El proyecto incluye configuración para construir y desplegar con Cloud Build y Cloud Run. Los identificadores concretos de proyecto, servicio, cuenta y URLs administrativas deben mantenerse fuera de la documentación pública.
 
-- Proyecto: `project-c603f2e8-0d5d-451f-ade`
-- Region: `us-central1`
-- Servicio Cloud Run: `transportadora`
-- URL: `https://transportadora-754837345818.us-central1.run.app`
+Flujo genérico:
 
-Deploy usado actualmente:
-
-```powershell
-& 'C:\Users\ll\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' builds submit --project=project-c603f2e8-0d5d-451f-ade --config cloudbuild.yaml
+```bash
+gcloud builds submit --project=<GCP_PROJECT_ID> --config cloudbuild.yaml
 ```
 
-El `cloudbuild.yaml` construye frontend, app chofer web, landing y backend, publica imagen en Artifact Registry y despliega Cloud Run.
+`cloudbuild.yaml` construye frontend, app chofer web, landing y backend, publica la imagen en Artifact Registry y despliega Cloud Run según la configuración del entorno.
 
 ## App Chofer
 
@@ -267,17 +262,18 @@ La app incluye:
 - GPS en segundo plano.
 - Cola offline para tracking y eventos.
 - Reparto local.
-- Navegacion externa con Google Maps/Waze.
-- Impresion Bluetooth termica.
-- Soporte OTA desde el modulo App Chofer OTA.
+- Navegación externa con Google Maps/Waze.
+- Impresión Bluetooth térmica.
+- Soporte OTA desde el módulo App Chofer OTA.
 
 ## Seguridad
 
 - No commitear `.env`, secretos, service accounts, builds, APKs generados ni carpetas `node_modules`.
 - No aceptar datos cross-tenant por ids externos sin validar pertenencia con `tenant_id`.
-- Registrar acciones sensibles en auditoria.
+- Registrar acciones sensibles en auditoría.
 - Usar refresh tokens para sesiones largas.
 - Revisar rutas nuevas con `npm run test:tenant`.
+- Mantener IDs de proyectos cloud, endpoints administrativos y detalles operativos internos fuera de archivos públicos cuando no sean necesarios para usar el proyecto.
 
 ## Limpieza del Repositorio
 
@@ -297,10 +293,10 @@ Se consideran artefactos locales y no deben versionarse:
 - `manual_tdr058bt_text.txt`
 - `backend/uploads/`
 
-## Roadmap Tecnico Corto
+## Roadmap Técnico Corto
 
-- Completar migracion PostgreSQL productiva.
-- Agregar pruebas API por endpoint para cada modulo tenant.
+- Completar migración PostgreSQL productiva.
+- Agregar pruebas API por endpoint para cada módulo tenant.
 - Code splitting del frontend para reducir bundle.
-- Formalizar generacion y publicacion de APK/OTA en scripts versionados.
-- Convertir reportes financieros a endpoints agregados dedicados por chofer, vehiculo y aging real.
+- Formalizar generación y publicación de APK/OTA en scripts versionados.
+- Convertir reportes financieros a endpoints agregados dedicados por chofer, vehículo y aging real.
