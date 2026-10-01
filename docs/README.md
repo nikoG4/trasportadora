@@ -285,7 +285,7 @@ Se consideran artefactos locales y no deben versionarse:
 - `.vite/`
 - `.app-chofer-vite.pid`
 - `*.log`
-- `*.apk`; si se publica un APK desde `backend/downloads/`, queda como artefacto local incluido por `.gcloudignore`, no como archivo versionado.
+- `*.apk`
 - `apk_posprinter_extract/`
 - `apk_posprinter_jadx/`
 - `manual_pages/`
