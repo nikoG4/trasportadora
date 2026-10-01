@@ -1,25 +1,30 @@
-# Scripts de publicacion
+# Scripts de publicación
 
-Variables opcionales:
+Los scripts de publicación toman la configuración sensible exclusivamente desde variables de entorno. No hay credenciales, URLs productivas ni IDs de proyectos cloud definidos por defecto en el repositorio.
+
+Variables requeridas para las operaciones de publicación que las necesiten:
 
 ```powershell
-$env:TRANSPORTADORA_API_URL="https://transportadora-ayr5ylhexa-uc.a.run.app/api"
-$env:TRANSPORTADORA_ADMIN_USER="admin"
-$env:TRANSPORTADORA_ADMIN_PASSWORD="admin123"
-$env:GCLOUD_PROJECT_ID="project-c603f2e8-0d5d-451f-ade"
+$env:TRANSPORTADORA_API_URL="https://api.example.com/api"
+$env:TRANSPORTADORA_ADMIN_USER="release-admin"
+$env:TRANSPORTADORA_ADMIN_PASSWORD="<secret>"
+$env:GCLOUD_PROJECT_ID="<gcp-project-id>"
 $env:GCLOUD_REGION="us-central1"
-$env:GCLOUD_CMD="C:\Users\ll\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
+# Opcional si gcloud ya está en PATH:
+$env:GCLOUD_CMD="gcloud"
 ```
+
+> No copies contraseñas reales en scripts, documentación, issues o commits. En CI usa GitHub Actions Secrets / Workload Identity Federation y, en entornos productivos, un gestor de secretos.
 
 ## Publicar APK chofer
 
-Compila web, sincroniza Capacitor, genera APK debug y lo sube al endpoint nativo:
+Compila web, sincroniza Capacitor, genera APK y lo publica mediante el endpoint configurado:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-apk.ps1 -Version 1.0.2 -MinSupportedVersion 1.0
 ```
 
-Si no se pasa `-Version`, incrementa el patch de `android/app/build.gradle`.
+Si no se pasa `-Version`, el script puede derivar la versión según la configuración del proyecto.
 
 ## Publicar bundle OTA chofer
 
@@ -43,7 +48,7 @@ La imagen Docker contiene backend, backoffice, app chofer web y landing.
 powershell -ExecutionPolicy Bypass -File scripts/deploy-cloudrun.ps1
 ```
 
-Wrappers por intencion:
+Wrappers por intención:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/publish-backend.ps1
@@ -60,7 +65,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-component.ps1 -Target lan
 powershell -ExecutionPolicy Bypass -File scripts/build-component.ps1 -Target app-chofer -CapSync -Apk
 ```
 
-## Deteccion de alcance para CI/CD
+## Detección de alcance para CI/CD
 
 El workflow `.github/workflows/transportadora-release.yml` usa:
 
@@ -71,16 +76,16 @@ powershell -ExecutionPolicy Bypass -File scripts/detect-release-scope.ps1 -BaseR
 Reglas:
 
 - `backend/`, `frontend/`, `landing-saas/`, `Dockerfile` o `cloudbuild.yaml`: despliegue Cloud Run.
-- `app-chofer/src`, `app-chofer/public`, `index.html` o configuracion web: release OTA.
+- `app-chofer/src`, `app-chofer/public`, `index.html` o configuración web: release OTA.
 - `app-chofer/android`, `capacitor.config.*`, `package.json`, `package-lock.json` o `patches`: release APK.
 
-Secrets requeridos en GitHub Actions:
+Secrets/configuración esperada en GitHub Actions:
 
-- `GCP_PROJECT_ID`: `project-c603f2e8-0d5d-451f-ade`.
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`: provider OIDC de Google para el repo.
+- `GCP_PROJECT_ID`: ID del proyecto de Google Cloud.
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`: provider OIDC de Google para el repositorio.
 - `GCP_SERVICE_ACCOUNT`: service account usada por GitHub Actions.
-- `TRANSPORTADORA_API_URL`: `https://transportadora-ayr5ylhexa-uc.a.run.app/api`.
-- `TRANSPORTADORA_ADMIN_USER`: usuario `superadmin_saas`.
-- `TRANSPORTADORA_ADMIN_PASSWORD`: password del usuario anterior.
+- `TRANSPORTADORA_API_URL`: URL de la API productiva.
+- `TRANSPORTADORA_ADMIN_USER`: usuario de automatización con los permisos mínimos necesarios.
+- `TRANSPORTADORA_ADMIN_PASSWORD`: secreto del usuario anterior.
 
-No se usa key JSON porque el proyecto bloquea la creacion de claves de service account; el workflow autentica con Workload Identity Federation.
+La autenticación de CI puede realizarse mediante Workload Identity Federation para evitar almacenar una key JSON de service account en GitHub.
