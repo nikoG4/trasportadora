@@ -79,70 +79,49 @@ El proyecto está pensado como una plataforma integral: desde el alta de pedidos
 - Geolocation
 - Plugins nativos propios
 
-### Infraestructura y pruebas
+### Infraestructura
 
 - Docker
 - Google Cloud Build
 - Google Cloud Run
 - Artifact Registry
 - Google Cloud Storage opcional
-- Playwright
 
 ## Arquitectura
 
 ```text
 trasportadora/
-├── backend/       # API REST Node/Express/TypeScript
+├── backend/       # API REST y lógica de negocio
 ├── frontend/      # Backoffice administrativo
-├── app-chofer/    # PWA + app Android con Capacitor
-├── landing-saas/  # Landing, registro y login
+├── app-chofer/    # Aplicación móvil/PWA para choferes
+├── landing-saas/  # Landing, registro y acceso SaaS
 ├── e2e-tests/     # Pruebas Playwright
 ├── tools/tests/   # Regresiones y aislamiento tenant
-├── deploy/        # Configuración de despliegue
+├── deploy/        # Recursos de despliegue
 └── docs/          # Documentación técnica completa
 ```
 
-## Multi-tenant y seguridad
+## Multi-tenant
 
-Los datos operativos están asociados a `tenant_id`. Los usuarios normales solo deben operar dentro de su empresa, mientras que el rol SaaS de administración puede realizar operaciones cross-tenant explícitas.
+Cada dato operativo está asociado a un `tenant_id`. Los usuarios de una empresa solo deben acceder a información perteneciente a su tenant, mientras que las operaciones cross-tenant quedan reservadas al rol SaaS correspondiente.
 
-El sistema incluye roles como:
+El proyecto incluye pruebas específicas para comprobar aislamiento entre tenants en módulos operativos, dashboard, finanzas, GPS, usuarios y app de choferes.
 
-- `superadmin_saas`
-- `admin_empresa`
-- `operador`
-- `financiero`
-- `rrhh`
-- `despachante`
-- `chofer`
-- `cliente_portal`
+## Desarrollo
 
-Las rutas productivas requieren autenticación salvo endpoints públicos concretos como login, refresh y recursos explícitamente expuestos.
-
-## Inicio rápido
-
-Instalar dependencias desde la raíz:
+Instala las dependencias:
 
 ```bash
 npm install
 ```
 
-Cuando sea necesario, instalar también las dependencias de cada aplicación:
-
-```bash
-cd backend && npm install
-cd ../frontend && npm install
-cd ../app-chofer && npm install
-cd ../landing-saas && npm install
-```
-
-Levantar todos los servicios:
+Levanta todos los servicios:
 
 ```bash
 npm run dev:all
 ```
 
-O por separado:
+También pueden ejecutarse por separado:
 
 ```bash
 npm run dev:backend
@@ -151,7 +130,7 @@ npm run dev:chofer
 npm run dev:landing
 ```
 
-## Build
+Build completo:
 
 ```bash
 npm run build:all
@@ -159,29 +138,17 @@ npm run build:all
 
 ## Pruebas
 
-Regresiones funcionales:
-
 ```bash
 npm run test:features
-```
-
-Aislamiento multi-tenant:
-
-```bash
 npm run test:tenant
-```
-
-End-to-end con Playwright:
-
-```bash
 npm run test:e2e
 ```
 
-La prueba de aislamiento tenant verifica que una empresa nueva no pueda acceder a información perteneciente a otro tenant a través de módulos operativos, finanzas, dashboard, GPS, usuarios, reportes y app chofer.
+`test:tenant` comprueba específicamente que un tenant nuevo no pueda ver información perteneciente a otro.
 
-## Variables de entorno
+## Configuración
 
-El backend utiliza variables como:
+Las variables del backend incluyen, entre otras:
 
 ```text
 PORT
@@ -195,29 +162,24 @@ SUPABASE_SERVICE_ROLE_KEY
 GCS_BUCKET
 ```
 
-Usa `backend/.env.example` y `deploy/env.example` como referencia. No versiones `.env`, service accounts, tokens ni credenciales reales.
+Usa los archivos `.env.example` como plantilla y mantén los valores reales fuera de Git.
 
-## Base de datos
+## Seguridad
 
-- **Desarrollo:** SQLite.
-- **Producción:** capa preparada para PostgreSQL/Supabase.
+- No versionar `.env`, tokens, secretos JWT, service accounts o credenciales de base de datos.
+- Mantener identificadores administrativos de infraestructura fuera de documentación pública cuando no sean necesarios para ejecutar el proyecto.
+- Validar siempre `tenant_id` antes de leer o modificar recursos.
+- Mantener las rutas y operaciones sensibles cubiertas por autenticación y auditoría.
+- Si una credencial estuvo alguna vez expuesta en Git, debe rotarse aunque se elimine del commit actual.
 
-Las consultas de datos operativos deben respetar el aislamiento mediante `tenant_id`. Antes de usar el sistema con clientes reales, la migración productiva y las pruebas de aislamiento deben estar validadas.
+## Documentación
 
-## Despliegue
+La documentación técnica ampliada está en:
 
-La infraestructura incluida permite construir los frontends, empaquetar el backend y desplegar el conjunto en Google Cloud mediante Cloud Build y Cloud Run.
+- [docs/README.md](docs/README.md)
 
-Consulta la documentación completa para configuración de producción, despliegue y operación.
+Allí se documentan la API, estados de pedidos/viajes, roles, variables, despliegue, pruebas y roadmap técnico.
 
-## Roadmap técnico
+## Estado actual
 
-- completar y validar la migración PostgreSQL productiva;
-- ampliar pruebas API por endpoint y tenant;
-- aplicar code splitting en frontend;
-- formalizar generación/publicación de APK y OTA;
-- ampliar reportes financieros agregados.
-
-## Documentación completa
-
-La guía técnica y funcional extendida está en [`docs/README.md`](docs/README.md). Allí se documentan endpoints, estados de pedidos/viajes, app chofer, seguridad, despliegue, pruebas y operación.
+El sistema está en una etapa de MVP avanzado. La base local funciona sobre SQLite y la migración productiva a PostgreSQL/Supabase forma parte del trabajo de endurecimiento antes de operar entornos reales.
