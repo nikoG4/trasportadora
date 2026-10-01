@@ -162,7 +162,7 @@ SUPABASE_SERVICE_ROLE_KEY
 GCS_BUCKET
 ```
 
-Usa los archivos `.env.example` como plantilla y mantén los valores reales fuera de Git.
+Usa los archivos `.env.example` como plantilla y mantén los valores reales fuera de Git. En producción, usa Secret Manager o un mecanismo equivalente.
 
 ## Seguridad
 
