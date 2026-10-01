@@ -279,17 +279,6 @@ export default function LoginForm({ onSuccess }: LoginFormProps) {
             </a>
           </div>
         </div>
-
-        {/* Demo Credentials */}
-        <div className="mt-6 bg-blue-50 rounded-xl p-4 border border-blue-200">
-          <h4 className="font-semibold text-blue-900 mb-2 text-sm">
-            Credenciales de Demo
-          </h4>
-          <div className="text-xs text-blue-800 space-y-1">
-            <p><strong>Email:</strong> admin</p>
-            <p><strong>Password:</strong> admin123</p>
-          </div>
-        </div>
       </div>
     </div>
   );
