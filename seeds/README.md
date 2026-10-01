@@ -1,25 +1,41 @@
 # Seeds iniciales
 
-El seed inicial se ejecuta actualmente desde `backend/src/db.ts` para mantener compatibilidad con el proyecto existente.
+El proyecto incluye datos de demostración para facilitar el desarrollo local y las pruebas automatizadas.
 
-Credenciales iniciales:
+## Desarrollo local
 
-- Usuario: `admin`
-- Contrasena: `admin123`
-- Rol: `superadmin_saas`
-- Tenant: `Empresa Demo Transportadora`
+El backend SQLite puede crear un usuario demo conocido para que la suite E2E funcione sin configuración adicional. Estas credenciales son **solo para desarrollo/pruebas locales** y no deben reutilizarse en ningún entorno accesible públicamente.
 
-Datos incluidos:
+Los tests existentes pueden asumir:
+
+- usuario demo: `admin`;
+- contraseña demo: `admin123`;
+- rol: `superadmin_saas`;
+- tenant: `Empresa Demo Transportadora`.
+
+## Producción / Supabase
+
+El bootstrap productivo no crea un administrador con una contraseña pública conocida. Para una base nueva, configura explícitamente:
+
+```text
+SEED_ADMIN_USERNAME
+SEED_ADMIN_PASSWORD
+```
+
+`SEED_ADMIN_PASSWORD` debe tener al menos 12 caracteres cuando `NODE_ENV=production`.
+
+Si esas variables no están presentes, el seed omite la creación del administrador en producción.
+
+## Datos demo incluidos
 
 - Tenant demo.
 - Permisos SaaS.
 - Roles RBAC.
-- Usuario superadmin.
 - Sucursales demo.
 - Clientes demo.
 - Choferes demo.
-- Vehiculos demo.
+- Vehículos demo.
 - Pedido demo.
-- Datos base de RRHH y gestion integral.
+- Datos base de RRHH y gestión integral.
 
-Para produccion se debe cambiar la contrasena inicial inmediatamente y mover el seed a migraciones controladas por entorno.
+Para una instalación real conviene evolucionar estos seeds hacia migraciones/bootstrap controlados por entorno y no cargar datos demo en la base productiva.
