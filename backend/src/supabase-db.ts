@@ -185,6 +185,25 @@ export async function initDb(): Promise<void> {
   }
 }
 
+function getSeedAdminCredentials(): { username: string; password: string } | null {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const username = process.env.SEED_ADMIN_USERNAME || (isProduction ? '' : 'admin');
+  const password = process.env.SEED_ADMIN_PASSWORD || (isProduction ? '' : 'admin123');
+
+  if (!username || !password) {
+    console.warn(
+      '⚠️ Admin seed skipped. Define SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD explicitly for a new production database.'
+    );
+    return null;
+  }
+
+  if (isProduction && password.length < 12) {
+    throw new Error('SEED_ADMIN_PASSWORD must be at least 12 characters in production.');
+  }
+
+  return { username, password };
+}
+
 // Seed data function
 function seedData(): void {
   try {
@@ -226,23 +245,26 @@ function seedData(): void {
       });
     });
 
-    // Insert default admin user (password: admin123)
-    const admin = db.get("SELECT * FROM users WHERE username = 'admin'") as any;
-    const adminHash = bcrypt.hashSync('admin123', 10);
-    if (!admin) {
-      db.prepare(`
-        INSERT INTO users (tenant_id, username, password, password_hash, role, nombre, estado)
-        VALUES (1, 'admin', '', $1, 'superadmin_saas', 'Superadmin SaaS', 'activo')
-      `).run(adminHash);
-    } else if (!admin.password_hash) {
-      db.prepare(`
-        UPDATE users
-        SET tenant_id = COALESCE(tenant_id, 1),
-            password_hash = $1,
-            role = CASE WHEN role = 'admin' THEN 'superadmin_saas' ELSE role END,
-            estado = COALESCE(estado, 'activo')
-        WHERE id = $2
-      `).run(adminHash, admin.id);
+    // Never create a known default administrator in production.
+    const seedAdmin = getSeedAdminCredentials();
+    if (seedAdmin) {
+      const admin = db.get("SELECT * FROM users WHERE username = $1", [seedAdmin.username]) as any;
+      const adminHash = bcrypt.hashSync(seedAdmin.password, 10);
+      if (!admin) {
+        db.prepare(`
+          INSERT INTO users (tenant_id, username, password, password_hash, role, nombre, estado)
+          VALUES (1, $1, '', $2, 'superadmin_saas', 'Superadmin SaaS', 'activo')
+        `).run(seedAdmin.username, adminHash);
+      } else if (!admin.password_hash) {
+        db.prepare(`
+          UPDATE users
+          SET tenant_id = COALESCE(tenant_id, 1),
+              password_hash = $1,
+              role = CASE WHEN role = 'admin' THEN 'superadmin_saas' ELSE role END,
+              estado = COALESCE(estado, 'activo')
+          WHERE id = $2
+        `).run(adminHash, admin.id);
+      }
     }
 
     // Insert default configuration
